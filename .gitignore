@@ -1,0 +1,26 @@
+# Android / Gradle
+.gradle/
+build/
+local.properties
+*.apk
+*.ap_
+*.dex
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 密钥（不入库）
+app-sign.keystore
+app-sign.keystore.b64
+keystore.properties
+
+# 编辑器
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# 调试残留
+*.log
+home.png
+lspd.db*
