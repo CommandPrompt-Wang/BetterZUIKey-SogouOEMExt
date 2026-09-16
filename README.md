@@ -201,6 +201,18 @@ synchronized(ImfLock) {
 > `RuntimeException: Unable to get provider androidx.startup.InitializationProvider`。
 > 想压体积就用 release + R8（`minifyEnabled`），或把界面改成自绘卡片。
 
+## 包名 / 签名 / 仓库
+
+| 项 | 值 |
+|---|---|
+| 包名 | `moe.lovefirefly.bzk.sougouext` |
+| 签名 | 同一套签名配置（`app-sign.keystore` + `keystore.properties`，两者都**不入库**；证书 SHA-256 `***REMOVED***`） |
+| 仓库 | `git@github.com:CommandPrompt-Wang/BetterZUIKey-SougouOEMExt.git` |
+
+换过包名后注意：LSPosed 里要**重新启用**这个模块并勾选作用域
+`com.sohu.inputmethod.sogou.oem`；语言顺序配置存在模块包名对应的 remote preferences 里，
+新包名会是**默认配置**，需要重新拖一次。
+
 ## 许可
 
 GPL-3.0
