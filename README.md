@@ -157,6 +157,43 @@ strict: blocked native switch key KEYCODE_SHIFT_LEFT
 - 不误伤打字：判定条件是 `metaState` 带 `META_CTRL_ON`，所以 **Shift+字母 大写** 不受影响，
   普通空格也不受影响。
 
+## 3.6 二期：标点管线（三个开关）
+
+搜狗把中文态下的标点**硬编码**转成中文/全角（shared_prefs 84 键、MMKV 二十多个库都没有开关），
+而且发生在我们之前 —— 到 `commitText` 时字符串已经是 `，＋｛` 了。所以只能在这个点上做改写。
+
+**管线（顺序很重要）：`{开关3;开关1，3 优先于1} → 开关2`**
+
+1. 语义层决定"是哪个字符"，形式层决定"它的宽窄形态"，所以形式层必须最后套；
+2. 开关1「智能中文标点」开 = 按映射表归一到中文标点（搜狗本来就做）；关 = 按键盘标点；
+3. 开关3「中英文标点切换」（快捷键 **Ctrl+.**）= 按键盘显示的标点输出（ASCII），**优先于开关1**；
+4. 开关2「全角模式」（快捷键 **Shift+Space**）= 标点/字母/数字/空格全角，关则半角。
+   形式层**只动 ASCII 与 FF01–FF5E**，且排除语义层负责的 `！？；：，（）` —— 否则"半角模式"
+   会把中文标点也拉成 ASCII，等于绕开开关1/3 的决定。
+
+**映射表（32 对，实测自本机）**
+
+```
+ASCII  : ,./\;:!?()[]<>"'+-*={}|~@#%&^$_`
+CHINESE: ，。、、；：！？（）【】《》“‘＋－＊＝｛｝｜～＠＃％＆＾＄＿·
+```
+
+三个"本机怪癖"（都实测过）：
+
+| 现象 | 处理 |
+|---|---|
+| `/` 与 `\` 都产出 `、` | 反向映射靠**上一个物理按键**消歧：按 `/` 得 `/`，按 `\` 得 `\` |
+| 反引号键输出的是 `·`(U+00B7)，不是 `` ` `` 也不是 `｀` | 表里把 `` ` `` 配 `·`，另外兼容 `｀`(FF40) |
+| `{` 会被配成对 `｛｝` | 照原样提交（不干预配对） |
+
+**快捷键与状态**：Shift+Space / Ctrl+. 在这台 OEM 上**没有任何原生行为**（实测：无命令追踪、
+提交内容不变），所以由模块在按键层接管；切换出来的状态是**运行期内存态**（不落盘，
+UI 上的开关是持久默认值）。
+
+**实现位置**：`android.inputmethodservice.RemoteInputConnection#commitText/setComposingText`
+（IME 进程内，可用 libxposed 的 `Chain.proceed(Object[])` 替换参数）；按键在
+`coa#onKeyDown/onKeyUp`。启动时会打一行 `punct: table self-check ok (32 pairs)` 自检表。
+
 ## 4. BZK 侧（另一侧的配合）
 
 `IMEDispatcher.switchCurrentImeSubtype()` 现在**统一**为"在本输入法内前进到下一个 subtype"：
@@ -206,6 +243,8 @@ synchronized(ImfLock) {
 | `DEV_SUBTYPE_PROBE` | `false` | 测 IME 进程能否写回 subtype（结论：不能） |
 | `DEV_SCHEME_PROBE` | `false` | 找方案状态变量 + 测 `switchToNextInputMethod` |
 | `DEV_SEQ_PROBE` | `false` | 自动跑 拼音→英语→五笔→拼音 命令链并读 `F()` |
+| `DEV_KEY_LOG` | `false` | 打印每个物理按键（定位快捷键走哪条路） |
+| `DEV_PUNCT_PROBE` | `false` | 打印提交到 InputConnection 的原始内容（定位全角转换点） |
 
 ## 7. 已知边界
 

@@ -25,6 +25,9 @@ final class LangConfig {
     private static final String KEY_ORDER = "order";
     private static final String KEY_DIVIDER = "divider";
     private static final String KEY_STRICT = "strict";
+    private static final String KEY_FULLWIDTH = "fullwidth";
+    private static final String KEY_SMART_PUNCT = "smartPunct";
+    private static final String KEY_EN_PUNCT = "enPunct";
 
     final List<String> order;
     final int divider;
@@ -32,10 +35,23 @@ final class LangConfig {
     /** 只响应系统框架语言切换消息（= 拦掉搜狗自己那条硬键盘切换路）。 */
     final boolean strict;
 
-    private LangConfig(List<String> order, int divider, boolean strict) {
+    /** 开关2：全角模式（true=全角，false=半角）。搜狗没有相关开关，硬编码行为。 */
+    final boolean fullwidth;
+
+    /** 开关1：智能中文标点（按映射表输出中文标点）。 */
+    final boolean smartPunct;
+
+    /** 开关3：中英文标点切换（true=按键盘显示的标点输出，优先于开关1）。 */
+    final boolean enPunct;
+
+    private LangConfig(List<String> order, int divider, boolean strict,
+            boolean fullwidth, boolean smartPunct, boolean enPunct) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
+        this.fullwidth = fullwidth;
+        this.smartPunct = smartPunct;
+        this.enPunct = enPunct;
     }
 
     static LangConfig load(XposedModule module) {
@@ -44,19 +60,32 @@ final class LangConfig {
             final String raw = sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER);
             final int div = sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER);
             final boolean strict = sp.getBoolean(KEY_STRICT, false);
-            return parse(raw, div, strict);
+            final boolean fullwidth = sp.getBoolean(KEY_FULLWIDTH, false);
+            final boolean smartPunct = sp.getBoolean(KEY_SMART_PUNCT, true);
+            final boolean enPunct = sp.getBoolean(KEY_EN_PUNCT, false);
+            return parse(raw, div, strict, fullwidth, smartPunct, enPunct);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
-            return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER, false);
+            return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
+                    false, false, true, false);
         }
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
     static LangConfig parse(String raw, int divider) {
-        return parse(raw, divider, false);
+        return parse(raw, divider, false, false, true, false);
     }
 
     static LangConfig parse(String raw, int divider, boolean strict) {
+        return parse(raw, divider, strict, false);
+    }
+
+    static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth) {
+        return parse(raw, divider, strict, fullwidth, true, false);
+    }
+
+    static LangConfig parse(String raw, int divider, boolean strict,
+            boolean fullwidth, boolean smartPunct, boolean enPunct) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -68,7 +97,7 @@ final class LangConfig {
             if (!list.contains(id)) list.add(id);
         }
         int d = Math.max(0, Math.min(divider, list.size()));
-        return new LangConfig(list, d, strict);
+        return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct);
     }
 
     /** 分隔线上方（轮转集合），按顺序。 */
@@ -94,7 +123,8 @@ final class LangConfig {
     }
 
     String signature() {
-        return String.join(",", order) + "|" + divider + "|strict=" + strict;
+        return String.join(",", order) + "|" + divider + "|strict=" + strict
+                + "|full=" + fullwidth + "|smart=" + smartPunct + "|en=" + enPunct;
     }
 
     static List<String> defaultOrder() {

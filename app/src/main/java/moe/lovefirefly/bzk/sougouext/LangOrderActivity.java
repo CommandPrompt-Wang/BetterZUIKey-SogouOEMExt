@@ -61,6 +61,9 @@ public class LangOrderActivity extends AppCompatActivity {
     private TextView hint;
     private MaterialSwitch strictSwitch;
     private TextView strictHint;
+    private MaterialSwitch smartSwitch;
+    private MaterialSwitch fullSwitch;
+    private MaterialSwitch enSwitch;
     private SharedPreferences prefs;
     private int pad;
 
@@ -109,6 +112,14 @@ public class LangOrderActivity extends AppCompatActivity {
         strictBox.addView(strictSwitch);
         strictBox.addView(strictHint);
 
+        smartSwitch = addSwitch(strictBox, "智能中文标点",
+                "按映射表输出中文标点：. → 。   , → ，   / 与 \\ → 、   [ → 【   < → 《 …"
+                + "（搜狗本来就做，这里做归一；关掉则按键盘标点）");
+        fullSwitch = addSwitch(strictBox, "全角模式",
+                "快捷键 Shift+Space。开启后标点/字母/空格变全角；关闭则半角（不影响中文标点）");
+        enSwitch = addSwitch(strictBox, "中英文标点切换",
+                "快捷键 Ctrl+. 。开启后按键盘显示的标点输出（ASCII），优先于\"智能中文标点\"");
+
         final ExtendedFloatingActionButton fab = new ExtendedFloatingActionButton(this);
         fab.setText("原理 / 说明");
         fab.setOnClickListener(v -> startActivity(
@@ -128,6 +139,7 @@ public class LangOrderActivity extends AppCompatActivity {
         applyInsets(root);
 
         bindStrictSwitch(false);
+        bindPunctSwitches(LangConfig.parse(null, LangSpec.DEFAULT_DIVIDER));
         rebuildFromModel(LangConfig.defaultOrder(), LangSpec.DEFAULT_DIVIDER);
 
         XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
@@ -140,6 +152,7 @@ public class LangOrderActivity extends AppCompatActivity {
                             prefs.getInt("divider", LangSpec.DEFAULT_DIVIDER));
                     rebuildFromModel(cfg.order, cfg.divider);
                     bindStrictSwitch(cfg.strict);
+                    bindPunctSwitches(cfg);
                 });
             }
 
@@ -177,6 +190,47 @@ public class LangOrderActivity extends AppCompatActivity {
             prefs.edit().putBoolean("strict", isChecked).apply();
             android.util.Log.i(TAG, "UI: strict saved = " + isChecked);
             Toast.makeText(this, "已保存（下次弹出键盘生效）", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    /** 新建一个带说明的开关，挂在给定容器里。 */
+    private MaterialSwitch addSwitch(LinearLayout parent, String title, String hintText) {
+        final MaterialSwitch sw = new MaterialSwitch(this);
+        sw.setText(title);
+        sw.setPadding(0, pad / 2, 0, pad / 4);
+
+        final TextView tv = new TextView(this);
+        tv.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        tv.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        tv.setText(hintText);
+        tv.setPadding(0, 0, 0, pad / 4);
+
+        parent.addView(sw);
+        parent.addView(tv);
+        return sw;
+    }
+
+    /** 标点三个开关（与 BZK 无关，任何时候都能用）。 */
+    private void bindPunctSwitches(LangConfig cfg) {
+        bindBoolSwitch(smartSwitch, "smartPunct", cfg.smartPunct);
+        bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
+        bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
+    }
+
+    private void bindBoolSwitch(MaterialSwitch sw, String key, boolean checked) {
+        sw.setOnCheckedChangeListener(null);
+        sw.setChecked(checked);
+        sw.setOnCheckedChangeListener((v, isChecked) -> {
+            if (prefs == null) {
+                android.util.Log.w(TAG, "UI: " + key + " toggle ignored, service not bound");
+                Toast.makeText(this, "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+            prefs.edit().putBoolean(key, isChecked).apply();
+            android.util.Log.i(TAG, "UI: " + key + " saved = " + isChecked);
+            Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
         });
     }
 

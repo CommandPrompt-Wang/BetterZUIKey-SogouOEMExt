@@ -38,6 +38,12 @@ public class BridgeHook extends XposedModule {
     /** 开发期：追踪搜狗请求的命令 id + dump 注册表（定位其它语言路径时打开）。 */
     static final boolean DEV_CMD_TRACE = false;
 
+    /** 开发期：打印每个物理按键（定位 Shift+Space / Ctrl+. 走哪条路）。 */
+    static final boolean DEV_KEY_LOG = false;
+
+    /** 开发期：抓全角标点在哪儿产生（sendKeyChar / InputConnection）。 */
+    static final boolean DEV_PUNCT_PROBE = false;
+
     /** 开发期：采样 LUa.F()（切五笔等不触发 subtype 回调的状态也能看到）。 */
     private static final boolean DEV_STATE_WATCH = false;
 

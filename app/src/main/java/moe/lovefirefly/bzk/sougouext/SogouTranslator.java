@@ -97,6 +97,28 @@ public final class SogouTranslator {
     private static volatile boolean sSuppress;
 
     private static volatile boolean sKeyGuardsInstalled;
+    private static volatile boolean sPunctHooked;
+
+    /** 最近一次按下的 / 或 \ （搜狗都产 、，反向映射靠它消歧）。 */
+    private static volatile char sLastSlashKey;
+
+    /** 快捷键切换出来的运行期状态（null = 用配置里的默认值）。 */
+    private static volatile Boolean sRuntimeFull;
+    private static volatile Boolean sRuntimeEn;
+
+    static boolean currentFullWidth() {
+        final Boolean rt = sRuntimeFull;
+        if (rt != null) return rt;
+        final LangConfig cfg = sConfig;
+        return cfg != null && cfg.fullwidth;
+    }
+
+    static boolean currentEnPunct() {
+        final Boolean rt = sRuntimeEn;
+        if (rt != null) return rt;
+        final LangConfig cfg = sConfig;
+        return cfg != null && cfg.enPunct;
+    }
 
     /** marker 推进单飞：setInputView 与 onStartInputView 会各触发一次，避免两个线程互抢。 */
     private static volatile boolean sRepositioning;
@@ -115,6 +137,11 @@ public final class SogouTranslator {
     private SogouTranslator() {}
 
     private static volatile boolean sCommandTrace;
+
+    /** 当前 IME 服务对象（探针用）。 */
+    static Object service() {
+        return sService;
+    }
 
     /** 框架最后一次下发的 subtype；还没收到回调时为 null。 */
     static InputMethodSubtype currentSubtype() {
@@ -160,6 +187,11 @@ public final class SogouTranslator {
                             Log.i(TAG, "service captured: " + sService.getClass().getName());
                             bindCommandRegistry();
                             installKeyGuards();
+                            installPunctuationRewrite();
+                            if (BridgeHook.DEV_PUNCT_PROBE) {
+                                SogouPunctProbe.install(sModule, SogouTranslator.class.getClassLoader(),
+                                        sService);
+                            }
                             startConfigWatch();
                         }
                         sViewReady = true;
@@ -199,6 +231,75 @@ public final class SogouTranslator {
     }
 
     /**
+     * 标点管线钩子：{@code {开关3;开关1（3 优先）} -> 开关2}。
+     *
+     * <p>搜狗的中文标点映射是硬编码的、发生在我们之前，所以：
+     * 开关1 开 = 归一到中文标点（保持搜狗行为）；开关3 开 = 反向还原成键盘标点（ASCII）；
+     * 最后再按开关2 决定全角/半角（只动 ASCII 与 FF01–FF5E 这一段，不碰中文标点）。
+     */
+    private static void installPunctuationRewrite() {
+        final Object svc = sService;
+        final XposedModule module = sModule;
+        if (svc == null || module == null || sPunctHooked) return;
+        sPunctHooked = true;
+        try {
+            final Object ic = svc.getClass().getMethod("getCurrentInputConnection").invoke(svc);
+            if (ic == null) {
+                Log.w(TAG, "punct: no input connection at install time");
+                return;
+            }
+            Log.i(TAG, "punct: connection = " + ic.getClass().getName());
+            Log.i(TAG, "punct: table self-check " + PunctPipeline.selfCheck());
+            final java.util.Set<Method> hooked = new java.util.HashSet<>();
+            for (Class<?> c = ic.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+                for (Method m : c.getDeclaredMethods()) {
+                    final String n = m.getName();
+                    if (!n.equals("commitText") && !n.equals("setComposingText")) continue;
+                    if (m.getParameterCount() != 2) continue;
+                    m.setAccessible(true);
+                    if (!hooked.add(m)) continue;
+                    try {
+                        module.hook(m).intercept(chain -> {
+                            final LangConfig cfg = sConfig;
+                            if (cfg == null) return chain.proceed();
+                            final Object a0 = chain.getArg(0);
+                            if (!(a0 instanceof CharSequence)) return chain.proceed();
+                            final String src = a0.toString();
+                            String out = src;
+                            // 语义层：开关3 优先于开关1（快捷键可临时覆盖）
+                            if (currentEnPunct()) {
+                                final String r = PunctPipeline.toAsciiPunct(out, sLastSlashKey);
+                                if (r != null) out = r;
+                            } else if (cfg.smartPunct) {
+                                final String r = PunctPipeline.toChinesePunct(out);
+                                if (r != null) out = r;
+                            }
+                            // 形式层：全角 / 半角
+                            final boolean full = currentFullWidth();
+                            final String w = full
+                                    ? PunctPipeline.toFullWidth(out)
+                                    : PunctPipeline.toHalfWidth(out);
+                            if (w != null) out = w;
+                            if (out.equals(src)) return chain.proceed();
+                            final Object[] args = chain.getArgs().toArray();
+                            args[0] = out;
+                            Log.i(TAG, "punct: " + src + " -> " + out
+                                    + (full ? " [full]" : " [half]")
+                                    + (currentEnPunct() ? " [en]"
+                                       : cfg.smartPunct ? " [smart]" : ""));
+                            return chain.proceed(args);
+                        });
+                        Log.i(TAG, "punct hooked " + c.getSimpleName() + "#" + n);
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+        } catch (Throwable err) {
+            Log.w(TAG, "punct install failed: " + err);
+        }
+    }
+
+    /**
      * 吞掉搜狗原生的"切语言"组合键（Ctrl+Space / Ctrl+Shift）。
      *
      * <p>为什么必须做到按键这一层：实测搜狗的 Ctrl+Space **不走** `cta/dta` 命令
@@ -224,6 +325,44 @@ public final class SogouTranslator {
                 if (!hooked.add(m)) continue;
                 try {
                     module.hook(m).intercept(chain -> {
+                        if (BridgeHook.DEV_KEY_LOG) {
+                            final Object k = chain.getArg(0);
+                            final Object e = chain.getArg(1);
+                            if (e instanceof KeyEvent) {
+                                final KeyEvent ev = (KeyEvent) e;
+                                Log.i(TAG, "KEY " + n + " " + KeyEvent.keyCodeToString(ev.getKeyCode())
+                                        + " meta=0x" + Integer.toHexString(ev.getMetaState())
+                                        + " repeat=" + ev.getRepeatCount());
+                            }
+                        }
+                        final boolean down = n.equals("onKeyDown");
+                        if (chain.getArg(1) instanceof KeyEvent) {
+                            final KeyEvent kev = (KeyEvent) chain.getArg(1);
+                            final int u = kev.getUnicodeChar();
+                            // 记录 / 与 \ （两者搜狗都产 、，反向还原时靠它消歧）
+                            if (u == '/' || u == '\\') sLastSlashKey = (char) u;
+
+                            final int kc2 = kev.getKeyCode();
+                            final int meta2 = kev.getMetaState();
+                            final boolean ctrl = (meta2 & KeyEvent.META_CTRL_ON) != 0;
+                            final boolean shift = (meta2 & KeyEvent.META_SHIFT_ON) != 0;
+                            // Shift+Space → 全角/半角
+                            if (kc2 == KeyEvent.KEYCODE_SPACE && shift && !ctrl) {
+                                if (down && kev.getRepeatCount() == 0) {
+                                    sRuntimeFull = !currentFullWidth();
+                                    Log.i(TAG, "hotkey Shift+Space -> fullwidth=" + sRuntimeFull);
+                                }
+                                return true;
+                            }
+                            // Ctrl+. → 中英文标点
+                            if (kc2 == KeyEvent.KEYCODE_PERIOD && ctrl) {
+                                if (down && kev.getRepeatCount() == 0) {
+                                    sRuntimeEn = !currentEnPunct();
+                                    Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + sRuntimeEn);
+                                }
+                                return true;
+                            }
+                        }
                         if (!sStrict) return chain.proceed();
                         final Object kcArg = chain.getArg(0);
                         final Object evArg = chain.getArg(1);
