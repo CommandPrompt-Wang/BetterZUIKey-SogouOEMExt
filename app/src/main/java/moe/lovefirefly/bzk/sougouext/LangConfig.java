@@ -61,7 +61,16 @@ final class LangConfig {
 
     static LangConfig load(XposedModule module) {
         try {
-            final SharedPreferences sp = module.getRemotePreferences(GROUP);
+            return load(module.getRemotePreferences(GROUP));
+        } catch (Throwable err) {
+            Log.w(TAG, "config load failed, using defaults: " + err);
+            return defaults();
+        }
+    }
+
+    /** App 侧与模块侧共用同一份读取逻辑（默认值只有一处）。 */
+    static LangConfig load(SharedPreferences sp) {
+        try {
             final String raw = sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER);
             final int div = sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER);
             final boolean strict = sp.getBoolean(KEY_STRICT, false);
@@ -72,9 +81,13 @@ final class LangConfig {
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
-            return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
-                    false, false, true, false, true);
+            return defaults();
         }
+    }
+
+    static LangConfig defaults() {
+        return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
+                false, false, true, false, true);
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */

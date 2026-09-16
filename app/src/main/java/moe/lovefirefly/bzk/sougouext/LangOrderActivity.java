@@ -154,7 +154,7 @@ public class LangOrderActivity extends AppCompatActivity {
         applyInsets(root);
 
         bindStrictSwitch(false);
-        bindPunctSwitches(LangConfig.parse(null, LangSpec.DEFAULT_DIVIDER));
+        bindPunctSwitches(LangConfig.defaults());
         rebuildFromModel(LangConfig.defaultOrder(), LangSpec.DEFAULT_DIVIDER);
 
         XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
@@ -162,9 +162,7 @@ public class LangOrderActivity extends AppCompatActivity {
                 prefs = service.getRemotePreferences(LangConfig.GROUP);
                 android.util.Log.i(TAG, "UI: xposed service bound, remote prefs ready");
                 runOnUiThread(() -> {
-                    final LangConfig cfg = LangConfig.parse(
-                            prefs.getString("order", LangSpec.DEFAULT_ORDER),
-                            prefs.getInt("divider", LangSpec.DEFAULT_DIVIDER));
+                    final LangConfig cfg = LangConfig.load(prefs);
                     rebuildFromModel(cfg.order, cfg.divider);
                     bindStrictSwitch(cfg.strict);
                     bindPunctSwitches(cfg);
