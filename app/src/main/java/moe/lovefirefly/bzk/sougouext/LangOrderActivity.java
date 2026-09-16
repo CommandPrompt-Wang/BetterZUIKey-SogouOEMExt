@@ -67,6 +67,10 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch numSwitch;
     private android.widget.Spinner slashSpinner;
     private boolean slashBinding;
+    private TextView connStatus;
+    /** 服务没连上时先暂存，连上后自动保存。 */
+    private final java.util.Map<String, Boolean> pendingBool = new java.util.HashMap<>();
+    private final java.util.Map<String, Integer> pendingInt = new java.util.HashMap<>();
     private SharedPreferences prefs;
     private int pad;
 
@@ -113,6 +117,22 @@ public class LangOrderActivity extends AppCompatActivity {
                 .TextAppearance_Material3_BodySmall);
         strictHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
         strictHint.setPadding(0, 0, 0, pad / 2);
+
+        connStatus = new TextView(this);
+        connStatus.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        connStatus.setPadding(0, 0, 0, pad / 4);
+        strictBox.addView(connStatus);
+        setConnStatus(false);
+
+        final com.google.android.material.button.MaterialButton retry =
+                new com.google.android.material.button.MaterialButton(this);
+        retry.setText("重新连接 Xposed 服务");
+        retry.setOnClickListener(v -> {
+            Toast.makeText(this, "正在重新连接…", Toast.LENGTH_SHORT).show();
+            registerService();
+        });
+        strictBox.addView(retry);
 
         strictBox.addView(strictSwitch);
         strictBox.addView(strictHint);
@@ -186,23 +206,7 @@ public class LangOrderActivity extends AppCompatActivity {
         bindPunctSwitches(LangConfig.defaults());
         rebuildFromModel(LangConfig.defaultOrder(), LangSpec.DEFAULT_DIVIDER);
 
-        XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
-            @Override public void onServiceBind(XposedService service) {
-                prefs = service.getRemotePreferences(LangConfig.GROUP);
-                android.util.Log.i(TAG, "UI: xposed service bound, remote prefs ready");
-                runOnUiThread(() -> {
-                    final LangConfig cfg = LangConfig.load(prefs);
-                    rebuildFromModel(cfg.order, cfg.divider);
-                    bindStrictSwitch(cfg.strict);
-                    bindPunctSwitches(cfg);
-                });
-            }
-
-            @Override public void onServiceDied(XposedService service) {
-                prefs = null;
-                android.util.Log.w(TAG, "UI: xposed service died, remote prefs unavailable");
-            }
-        });
+        registerService();
     }
 
     /**
@@ -221,18 +225,7 @@ public class LangOrderActivity extends AppCompatActivity {
                 : "未检测到BetterZUIKey，建议安装以增强功能");
         strictSwitch.setOnCheckedChangeListener(null);
         strictSwitch.setChecked(checked && bzk);
-        strictSwitch.setOnCheckedChangeListener((v, isChecked) -> {
-            if (prefs == null) {
-                // 服务还没绑上：必须明说，否则用户以为存了
-                android.util.Log.w(TAG, "UI: strict toggle ignored, xposed service not bound");
-                Toast.makeText(this, "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
-                        Toast.LENGTH_LONG).show();
-                return;
-            }
-            prefs.edit().putBoolean("strict", isChecked).apply();
-            android.util.Log.i(TAG, "UI: strict saved = " + isChecked);
-            Toast.makeText(this, "已保存（下次弹出键盘生效）", Toast.LENGTH_SHORT).show();
-        });
+        strictSwitch.setOnCheckedChangeListener((v, isChecked) -> putBool("strict", isChecked));
     }
 
     /** 新建一个带说明的开关，挂在给定容器里。 */
@@ -274,16 +267,7 @@ public class LangOrderActivity extends AppCompatActivity {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent,
                     android.view.View view, int position, long id) {
                 if (slashBinding) return;
-                if (prefs == null) {
-                    Toast.makeText(LangOrderActivity.this,
-                            "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
-                            Toast.LENGTH_LONG).show();
-                    return;
-                }
-                prefs.edit().putInt("slashMode", position).apply();
-                android.util.Log.i(TAG, "UI: slashMode saved = " + position);
-                Toast.makeText(LangOrderActivity.this, "已保存（最多 2 秒生效）",
-                        Toast.LENGTH_SHORT).show();
+                putInt("slashMode", position);
             }
 
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {
@@ -295,17 +279,7 @@ public class LangOrderActivity extends AppCompatActivity {
     private void bindBoolSwitch(MaterialSwitch sw, String key, boolean checked) {
         sw.setOnCheckedChangeListener(null);
         sw.setChecked(checked);
-        sw.setOnCheckedChangeListener((v, isChecked) -> {
-            if (prefs == null) {
-                android.util.Log.w(TAG, "UI: " + key + " toggle ignored, service not bound");
-                Toast.makeText(this, "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
-                        Toast.LENGTH_LONG).show();
-                return;
-            }
-            prefs.edit().putBoolean(key, isChecked).apply();
-            android.util.Log.i(TAG, "UI: " + key + " saved = " + isChecked);
-            Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
-        });
+        sw.setOnCheckedChangeListener((v, isChecked) -> putBool(key, isChecked));
     }
 
     private boolean hasBetterZUIKey() {
@@ -315,6 +289,84 @@ public class LangOrderActivity extends AppCompatActivity {
         } catch (Throwable ignored) {
             return false;
         }
+    }
+
+    /** 注册（或重试注册）Xposed 服务监听。 */
+    private void registerService() {
+        XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
+            @Override public void onServiceBind(XposedService service) {
+                prefs = service.getRemotePreferences(LangConfig.GROUP);
+                android.util.Log.i(TAG, "UI: xposed service bound, remote prefs ready");
+                runOnUiThread(() -> {
+                    flushPending();
+                    setConnStatus(true);
+                    final LangConfig cfg = LangConfig.load(prefs);
+                    rebuildFromModel(cfg.order, cfg.divider);
+                    bindStrictSwitch(cfg.strict);
+                    bindPunctSwitches(cfg);
+                });
+            }
+
+            @Override public void onServiceDied(XposedService service) {
+                prefs = null;
+                android.util.Log.w(TAG, "UI: xposed service died");
+                runOnUiThread(() -> setConnStatus(false));
+            }
+        });
+    }
+
+    private void setConnStatus(boolean connected) {
+        if (connStatus == null) return;
+        connStatus.setText(connected
+                ? "Xposed 服务：已连接"
+                : "Xposed 服务：未连接（改动会暂存，连上后自动保存）");
+        connStatus.setTextColor(themeColor(connected
+                ? com.google.android.material.R.attr.colorPrimary
+                : com.google.android.material.R.attr.colorError));
+    }
+
+    private void flushPending() {
+        if (prefs == null || (pendingBool.isEmpty() && pendingInt.isEmpty())) return;
+        final SharedPreferences.Editor ed = prefs.edit();
+        for (java.util.Map.Entry<String, Boolean> e : pendingBool.entrySet()) {
+            ed.putBoolean(e.getKey(), e.getValue());
+        }
+        for (java.util.Map.Entry<String, Integer> e : pendingInt.entrySet()) {
+            ed.putInt(e.getKey(), e.getValue());
+        }
+        ed.apply();
+        android.util.Log.i(TAG, "UI: flushed pending " + pendingBool.size() + " bool / "
+                + pendingInt.size() + " int");
+        pendingBool.clear();
+        pendingInt.clear();
+        Toast.makeText(this, "已补存之前的改动", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 统一的保存入口：没连上就暂存。 */
+    private void putBool(String key, boolean value) {
+        if (prefs == null) {
+            pendingBool.put(key, value);
+            Toast.makeText(this, "Xposed 服务未连接：改动已暂存，连上后自动保存",
+                    Toast.LENGTH_LONG).show();
+            setConnStatus(false);
+            return;
+        }
+        prefs.edit().putBoolean(key, value).apply();
+        android.util.Log.i(TAG, "UI: " + key + " saved = " + value);
+        Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
+    }
+
+    private void putInt(String key, int value) {
+        if (prefs == null) {
+            pendingInt.put(key, value);
+            Toast.makeText(this, "Xposed 服务未连接：改动已暂存，连上后自动保存",
+                    Toast.LENGTH_LONG).show();
+            setConnStatus(false);
+            return;
+        }
+        prefs.edit().putInt(key, value).apply();
+        android.util.Log.i(TAG, "UI: " + key + " saved = " + value);
+        Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
     }
 
     private int themeColor(int attrRes) {
@@ -375,6 +427,13 @@ public class LangOrderActivity extends AppCompatActivity {
                 order.add(e.lang);
                 if (!seenDivider) divider++;
             }
+        }
+        if (prefs == null) {
+            // 顺序/分隔线是两个键，暂存成一个整体没有意义：直接提示
+            Toast.makeText(this, "Xposed 服务未连接，顺序未保存（请点上方\"重新连接\"）",
+                    Toast.LENGTH_LONG).show();
+            setConnStatus(false);
+            return;
         }
         prefs.edit()
                 .putString("order", String.join(",", order))
