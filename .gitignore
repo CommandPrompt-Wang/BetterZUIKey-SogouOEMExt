@@ -24,3 +24,6 @@ keystore.properties
 *.log
 home.png
 lspd.db*
+chk.db*
+*.db-shm
+*.db-wal
