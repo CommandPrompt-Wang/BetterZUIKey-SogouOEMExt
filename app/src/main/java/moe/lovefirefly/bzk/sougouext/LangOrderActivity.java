@@ -116,14 +116,13 @@ public class LangOrderActivity extends AppCompatActivity {
         strictBox.addView(strictHint);
 
         smartSwitch = addSwitch(strictBox, "智能中文标点",
-                "按映射表输出中文标点：. → 。   , → ，   / 与 \\ → 、   [ → 【   < → 《 …"
-                + "（搜狗本来就做，这里做归一；关掉则按键盘标点）");
+                "在中文输入时使用更合理的标点映射，不再将 + - #等转为全角。");
         fullSwitch = addSwitch(strictBox, "全角模式",
-                "快捷键 Shift+Space。开启后标点/字母/空格变全角；关闭则半角（不影响中文标点）");
+                "快捷键 Shift+Space。开启后标点/字母/空格变全角；关闭则半角");
         enSwitch = addSwitch(strictBox, "中英文标点切换",
                 "快捷键 Ctrl+. 。开启后按键盘显示的标点输出（ASCII），优先于\"智能中文标点\"");
         numSwitch = addSwitch(strictBox, "智能编号",
-                "数字后面的 。/） 自动用半角 . / )（方便 1.  2) 这类编号）；"
+                "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
                 + "只作用于紧跟数字的那一下，后续字符照常");
 
         final ExtendedFloatingActionButton fab = new ExtendedFloatingActionButton(this);
