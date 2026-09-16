@@ -79,12 +79,13 @@ public class BridgeHook extends XposedModule {
                 }
                 final LangConfig cfg = LangConfig.load(this);
                 Log.i(TAG, "subtype: " + SubtypeInjector.apply(ctx, pkg, cfg));
-                final boolean bzk = hasBetterZUIKey(ctx) && ENABLE_STRICT;
-                SogouTranslator.setStrict(bzk);
+                final boolean bzk = hasBetterZUIKey(ctx);
+                final boolean strict = ENABLE_STRICT && cfg.strict;
+                SogouTranslator.setStrict(strict);
                 SogouTranslator.setCommandTrace(DEV_CMD_TRACE);
-                Log.i(TAG, "betterzuikey detected=" + bzk
-                        + (bzk ? " -> strict mode (language driven only by subtype)"
-                               : " -> normal mode (sogou own shortcuts untouched)"));
+                Log.i(TAG, "betterzuikey detected=" + bzk + ", strict switch=" + cfg.strict
+                        + " -> " + (strict ? "strict (language driven only by subtype)"
+                                           : "normal (sogou own chord also switches)"));
                 SogouTranslator.install(this, cl, ctx, pkg);
                 if (DEV_SUBTYPE_PROBE) {
                     SogouSubtypeProbe.install(this, cl, ctx);

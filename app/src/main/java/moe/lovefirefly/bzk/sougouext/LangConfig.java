@@ -24,13 +24,18 @@ final class LangConfig {
     static final String GROUP = "sogou_lang";
     private static final String KEY_ORDER = "order";
     private static final String KEY_DIVIDER = "divider";
+    private static final String KEY_STRICT = "strict";
 
     final List<String> order;
     final int divider;
 
-    private LangConfig(List<String> order, int divider) {
+    /** 只响应系统框架语言切换消息（= 拦掉搜狗自己那条硬键盘切换路）。 */
+    final boolean strict;
+
+    private LangConfig(List<String> order, int divider, boolean strict) {
         this.order = order;
         this.divider = divider;
+        this.strict = strict;
     }
 
     static LangConfig load(XposedModule module) {
@@ -38,15 +43,20 @@ final class LangConfig {
             final SharedPreferences sp = module.getRemotePreferences(GROUP);
             final String raw = sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER);
             final int div = sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER);
-            return parse(raw, div);
+            final boolean strict = sp.getBoolean(KEY_STRICT, false);
+            return parse(raw, div, strict);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
-            return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER);
+            return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER, false);
         }
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
     static LangConfig parse(String raw, int divider) {
+        return parse(raw, divider, false);
+    }
+
+    static LangConfig parse(String raw, int divider, boolean strict) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -58,7 +68,7 @@ final class LangConfig {
             if (!list.contains(id)) list.add(id);
         }
         int d = Math.max(0, Math.min(divider, list.size()));
-        return new LangConfig(list, d);
+        return new LangConfig(list, d, strict);
     }
 
     /** 分隔线上方（轮转集合），按顺序。 */
@@ -84,7 +94,7 @@ final class LangConfig {
     }
 
     String signature() {
-        return String.join(",", order) + "|" + divider;
+        return String.join(",", order) + "|" + divider + "|strict=" + strict;
     }
 
     static List<String> defaultOrder() {

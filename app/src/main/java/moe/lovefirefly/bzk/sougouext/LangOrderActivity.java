@@ -20,6 +20,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
+import com.google.android.material.materialswitch.MaterialSwitch;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -51,9 +52,13 @@ public class LangOrderActivity extends AppCompatActivity {
         }
     }
 
+    private static final String BZK_PKG = "moe.lovefirefly.betterzuikey";
+
     private final List<Entry> items = new ArrayList<>();
     private Adapter adapter;
     private TextView hint;
+    private MaterialSwitch strictSwitch;
+    private TextView strictHint;
     private SharedPreferences prefs;
     private int pad;
 
@@ -85,6 +90,23 @@ public class LangOrderActivity extends AppCompatActivity {
         rv.setAdapter(adapter);
         attachDrag(rv);
 
+        final LinearLayout strictBox = new LinearLayout(this);
+        strictBox.setOrientation(LinearLayout.VERTICAL);
+        strictBox.setPadding(pad * 2, pad / 2, pad * 2, 0);
+
+        strictSwitch = new MaterialSwitch(this);
+        strictSwitch.setText("只响应系统框架语言切换消息");
+        strictSwitch.setPadding(0, pad / 4, 0, pad / 4);
+
+        strictHint = new TextView(this);
+        strictHint.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        strictHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        strictHint.setPadding(0, 0, 0, pad / 2);
+
+        strictBox.addView(strictSwitch);
+        strictBox.addView(strictHint);
+
         final ExtendedFloatingActionButton fab = new ExtendedFloatingActionButton(this);
         fab.setText("原理 / 说明");
         fab.setOnClickListener(v -> startActivity(
@@ -98,10 +120,12 @@ public class LangOrderActivity extends AppCompatActivity {
         root.addView(hint);
         root.addView(rv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        root.addView(strictBox);
         root.addView(fab, flp);
         setContentView(root);
         applyInsets(root);
 
+        bindStrictSwitch(false);
         rebuildFromModel(LangConfig.defaultOrder(), LangSpec.DEFAULT_DIVIDER);
 
         XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
@@ -112,6 +136,7 @@ public class LangOrderActivity extends AppCompatActivity {
                             prefs.getString("order", LangSpec.DEFAULT_ORDER),
                             prefs.getInt("divider", LangSpec.DEFAULT_DIVIDER));
                     rebuildFromModel(cfg.order, cfg.divider);
+                    bindStrictSwitch(cfg.strict);
                 });
             }
 
@@ -119,6 +144,39 @@ public class LangOrderActivity extends AppCompatActivity {
                 prefs = null;
             }
         });
+    }
+
+    /**
+     * 开关 + 建议文案。
+     *
+     * <p>没装 BZK 时灰掉（并建议安装）；装了则保持可点，并把"建议怎么配"写清楚。
+     */
+    private void bindStrictSwitch(boolean checked) {
+        final boolean bzk = hasBetterZUIKey();
+        strictSwitch.setEnabled(bzk);
+        strictSwitch.setAlpha(bzk ? 1f : 0.45f);
+        strictHint.setText(bzk
+                ? "检测到BetterZUIKey，建议在它的\u201c输入法增强\u201d中为\u201c搜狗OEM\u201d"
+                  + "启用\u201cframework\u201d模式，然后打开此开关，"
+                  + "以让BetterZUIKey完全接管此选项"
+                : "未检测到BetterZUIKey，建议安装以增强功能");
+        strictSwitch.setOnCheckedChangeListener(null);
+        strictSwitch.setChecked(checked && bzk);
+        strictSwitch.setOnCheckedChangeListener((v, isChecked) -> {
+            if (prefs != null) {
+                prefs.edit().putBoolean("strict", isChecked).apply();
+                Toast.makeText(this, "已保存（下次弹出键盘生效）", Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private boolean hasBetterZUIKey() {
+        try {
+            getPackageManager().getPackageInfo(BZK_PKG, 0);
+            return true;
+        } catch (Throwable ignored) {
+            return false;
+        }
     }
 
     private int themeColor(int attrRes) {

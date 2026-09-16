@@ -247,9 +247,7 @@ public final class SogouTranslator {
             if (sCommandTrace) {
                 traceCommandRequests();
             }
-            if (sStrict) {
-                installLanguageGuards();
-            }
+            installLanguageGuards();      // 常驻：是否生效由开关在运行时判定
             // 自己执行时用缓存的方法（不走 eP.a(int)），与守卫同一份 Method
             if (sCmdZhToEnObj != null) {
                 sRunZhToEn = execMethod(sCmdZhToEnObj, sWo);
@@ -371,6 +369,7 @@ public final class SogouTranslator {
             if (!hooked.add(run)) continue;          // 共享同一个方法 → 只钩一次
             module.hook(run).intercept(chain -> {
                 if (sOurs.get()) return chain.proceed();          // 本模块自己发起的
+                if (!sStrict) return chain.proceed();             // 开关关闭：搜狗自己的切换照旧
                 final Object arg = chain.getArg(1);
                 final boolean fromUi = (arg instanceof Bundle)
                         && ((Bundle) arg).containsKey("keyboardEventId");
