@@ -176,8 +176,8 @@ public class LangOrderActivity extends AppCompatActivity {
         strictBox.addView(hotkeyHint);
 
         capSwitch = addSwitch(strictBox, "大写字母进拼音栏",
-                "中文输入时大写字母也进入拼音串，便于用候选/英文补全（例：Dance 会有整词候选）；"
-                + "英文输入状态不受影响");
+                "中文输入时大写字母也进入拼音串，便于英文补全或迅速输入。\n"
+                + "注意：拼音栏仍会显示为小写，上屏时会根据实际输入情况转换大小写。");
 
         numSwitch = addSwitch(strictBox, "智能编号",
                 "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
