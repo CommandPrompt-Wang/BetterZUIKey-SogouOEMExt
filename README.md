@@ -11,6 +11,9 @@
 - **分隔线下方** → 不做成 subtype，框架完全不知道它们，只能从搜狗键盘自己切；
 - **从下方的语言切出时，落回上方第一项**（靠模块把 marker 停在"最后一项"实现，见 ③.4）。
 
+排序下方还有一个开关：**「只响应系统框架语言切换消息」**（= 屏蔽搜狗原生的切换按键，见 3.5）。
+装了 BZK 时会给出配置建议；没装则灰掉并提示安装。
+
 界面在**模块 App 里**，风格与 BZK 完全一致（Material 3 DayNight、`MaterialCardView` 圆角 12dp
 + elevation 1dp、`textAppearanceTitleMedium/BodySmall`、拖拽用 RecyclerView + ItemTouchHelper、
 拖动时 elevation 12f/scale 0.98、松手落盘）：
@@ -98,9 +101,17 @@ if (!belongsTo) return currentMap;      // 静默 no-op
 
 ### 3.5 严格模式：硬键盘那条路只由 subtype 驱动
 
-检测到 BZK（`getPackageInfo("moe.lovefirefly.betterzuikey")`，搜狗 targetSdk 29 不受
-Android 11 包可见性过滤）时，给中↔英命令 `cta(-2)` / `dta(-6)` 的执行口
-`hP.a(WO, Bundle)` 装守卫，**按"调用来源"而不是按按键**判定：
+界面上由开关控制：**「只响应系统框架语言切换消息」**（配置键 `strict`）。
+
+- 装了 BZK（`getPackageInfo("moe.lovefirefly.betterzuikey")`；模块 App 侧靠 manifest 里的
+  `<queries>` 过包可见性）→ 开关可用，并提示：在 BZK 的"输入法增强"里为"搜狗OEM"
+  启用 `framework` 模式，然后打开此开关；
+- 没装 → 开关灰掉，提示"建议安装以增强功能"；
+- 模块侧守卫**常驻安装**，但每次调用都读一次开关 —— 所以改完开关**下次弹键盘就生效**，
+  不需要重启搜狗进程。
+
+打开时，给中↔英命令 `cta(-2)` / `dta(-6)` 的执行口 `hP.a(WO, Bundle)` 生效，
+**按"调用来源"而不是按按键**判定：
 
 | 调用来源 | Bundle | 处理 |
 |---|---|---|
@@ -165,7 +176,7 @@ synchronized(ImfLock) {
 
 | 常量 | 默认 | 作用 |
 |---|---|---|
-| `ENABLE_STRICT` | `true` | 严格模式总开关（仍需检测到 BZK） |
+| `ENABLE_STRICT` | `true` | 严格模式的编译期总闸（关掉则界面开关无效；运行期开关见配置 `strict`） |
 | `DEV_PROBE` / `DEV_STATE_PROBE` | `false` | 枚举命令注册表 / diff 状态字段（后者会自己切语言） |
 | `DEV_CMD_TRACE` | `false` | 记录搜狗请求的命令 id + dump 注册表 |
 | `DEV_CB_TRACE` | `false` | 打印每次 subtype 回调 hash |
