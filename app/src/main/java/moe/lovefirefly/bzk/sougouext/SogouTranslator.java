@@ -105,6 +105,9 @@ public final class SogouTranslator {
     /** 最近一次提交出去的最后一个字符（智能编号要判断"前一个是数字"）。 */
     private static volatile char sLastCommittedChar;
 
+    /** 上一次从 provider 读到的原始配置串（用于日志）。 */
+    private static volatile String sLastRaw;
+
     /** 快捷键切换出来的运行期状态（null = 用配置里的默认值）。 */
     private static volatile Boolean sRuntimeFull;
     private static volatile Boolean sRuntimeEn;
@@ -377,7 +380,7 @@ public final class SogouTranslator {
                                 if (down && kev.getRepeatCount() == 0) {
                                     sRuntimeEn = !currentEnPunct();
                                     Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + sRuntimeEn);
-                                    banner("中英文标点：" + (sRuntimeEn ? "开（按键盘）" : "关（智能中文）"));
+                                    banner("中英文标点：" + (sRuntimeEn ? "英文标点" : "中文标点"));
                                 }
                                 return true;
                             }
@@ -409,6 +412,26 @@ public final class SogouTranslator {
     }
 
     /**
+     * 查询 App 的 ContentProvider 用的 resolver。
+     *
+     * <p>必须用**本 App（搜狗）自己的** context：系统 context 的 callingPackage 是 "android"，
+     * 与调用方 uid 不匹配，provider 会抛
+     * {@code SecurityException: Given calling package android does not match caller's uid}。
+     */
+    private static android.content.ContentResolver providerResolver() {
+        try {
+            final Object app = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null);
+            if (app instanceof android.content.Context) {
+                return ((android.content.Context) app).getContentResolver();
+            }
+        } catch (Throwable err) {
+            Log.d(TAG, "currentApplication unavailable: " + err);
+        }
+        return sCtx != null ? sCtx.getContentResolver() : null;
+    }
+
+    /**
      * 定时轮询配置（2 秒）。
      *
      * <p>界面上的开关/顺序改完，最多 2 秒就生效，不用等下一次输入会话、也不用重启进程。
@@ -429,7 +452,14 @@ public final class SogouTranslator {
     private static void reloadConfig() {
         final XposedModule m = sModule;
         if (m == null) return;
-        final LangConfig cfg = LangConfig.load(m);
+        // 优先走 App 的 ContentProvider（不依赖 XposedService），失败再退回 remote prefs
+        final String raw = LangConfig.readProvider(providerResolver());
+        if (raw != null && !raw.equals(sLastRaw)) {
+            sLastRaw = raw;
+            Log.i(TAG, "provider raw = " + raw);
+        }
+        LangConfig cfg = LangConfig.parseDump(raw);
+        if (cfg == null) cfg = LangConfig.load(m);
         final boolean changed = sConfig == null || !cfg.signature().equals(sConfig.signature());
         sConfig = cfg;
         if (changed) {

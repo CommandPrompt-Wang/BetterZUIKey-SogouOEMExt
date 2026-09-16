@@ -25,8 +25,6 @@ import com.google.android.material.materialswitch.MaterialSwitch;
 import java.util.ArrayList;
 import java.util.List;
 
-import io.github.libxposed.service.XposedService;
-import io.github.libxposed.service.XposedServiceHelper;
 
 /**
  * 首页：语言顺序（可拖拽的顺序 + 可拖拽的分隔线）。
@@ -67,10 +65,7 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch numSwitch;
     private android.widget.Spinner slashSpinner;
     private boolean slashBinding;
-    private TextView connStatus;
-    /** 服务没连上时先暂存，连上后自动保存。 */
-    private final java.util.Map<String, Boolean> pendingBool = new java.util.HashMap<>();
-    private final java.util.Map<String, Integer> pendingInt = new java.util.HashMap<>();
+
     private SharedPreferences prefs;
     private int pad;
 
@@ -117,22 +112,6 @@ public class LangOrderActivity extends AppCompatActivity {
                 .TextAppearance_Material3_BodySmall);
         strictHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
         strictHint.setPadding(0, 0, 0, pad / 2);
-
-        connStatus = new TextView(this);
-        connStatus.setTextAppearance(com.google.android.material.R.style
-                .TextAppearance_Material3_BodySmall);
-        connStatus.setPadding(0, 0, 0, pad / 4);
-        strictBox.addView(connStatus);
-        setConnStatus(false);
-
-        final com.google.android.material.button.MaterialButton retry =
-                new com.google.android.material.button.MaterialButton(this);
-        retry.setText("重新连接 Xposed 服务");
-        retry.setOnClickListener(v -> {
-            Toast.makeText(this, "正在重新连接…", Toast.LENGTH_SHORT).show();
-            registerService();
-        });
-        strictBox.addView(retry);
 
         strictBox.addView(strictSwitch);
         strictBox.addView(strictHint);
@@ -206,7 +185,12 @@ public class LangOrderActivity extends AppCompatActivity {
         bindPunctSwitches(LangConfig.defaults());
         rebuildFromModel(LangConfig.defaultOrder(), LangSpec.DEFAULT_DIVIDER);
 
-        registerService();
+        // 配置存在本机（模块通过 ContentProvider 读取），不需要任何框架服务
+        prefs = getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
+        final LangConfig cfg0 = LangConfig.load(prefs);
+        rebuildFromModel(cfg0.order, cfg0.divider);
+        bindStrictSwitch(cfg0.strict);
+        bindPunctSwitches(cfg0);
     }
 
     /**
@@ -291,79 +275,14 @@ public class LangOrderActivity extends AppCompatActivity {
         }
     }
 
-    /** 注册（或重试注册）Xposed 服务监听。 */
-    private void registerService() {
-        XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
-            @Override public void onServiceBind(XposedService service) {
-                prefs = service.getRemotePreferences(LangConfig.GROUP);
-                android.util.Log.i(TAG, "UI: xposed service bound, remote prefs ready");
-                runOnUiThread(() -> {
-                    flushPending();
-                    setConnStatus(true);
-                    final LangConfig cfg = LangConfig.load(prefs);
-                    rebuildFromModel(cfg.order, cfg.divider);
-                    bindStrictSwitch(cfg.strict);
-                    bindPunctSwitches(cfg);
-                });
-            }
-
-            @Override public void onServiceDied(XposedService service) {
-                prefs = null;
-                android.util.Log.w(TAG, "UI: xposed service died");
-                runOnUiThread(() -> setConnStatus(false));
-            }
-        });
-    }
-
-    private void setConnStatus(boolean connected) {
-        if (connStatus == null) return;
-        connStatus.setText(connected
-                ? "Xposed 服务：已连接"
-                : "Xposed 服务：未连接（改动会暂存，连上后自动保存）");
-        connStatus.setTextColor(themeColor(connected
-                ? com.google.android.material.R.attr.colorPrimary
-                : com.google.android.material.R.attr.colorError));
-    }
-
-    private void flushPending() {
-        if (prefs == null || (pendingBool.isEmpty() && pendingInt.isEmpty())) return;
-        final SharedPreferences.Editor ed = prefs.edit();
-        for (java.util.Map.Entry<String, Boolean> e : pendingBool.entrySet()) {
-            ed.putBoolean(e.getKey(), e.getValue());
-        }
-        for (java.util.Map.Entry<String, Integer> e : pendingInt.entrySet()) {
-            ed.putInt(e.getKey(), e.getValue());
-        }
-        ed.apply();
-        android.util.Log.i(TAG, "UI: flushed pending " + pendingBool.size() + " bool / "
-                + pendingInt.size() + " int");
-        pendingBool.clear();
-        pendingInt.clear();
-        Toast.makeText(this, "已补存之前的改动", Toast.LENGTH_SHORT).show();
-    }
-
-    /** 统一的保存入口：没连上就暂存。 */
+    /** 统一的保存入口（写本机，模块最多 2 秒后来读）。 */
     private void putBool(String key, boolean value) {
-        if (prefs == null) {
-            pendingBool.put(key, value);
-            Toast.makeText(this, "Xposed 服务未连接：改动已暂存，连上后自动保存",
-                    Toast.LENGTH_LONG).show();
-            setConnStatus(false);
-            return;
-        }
         prefs.edit().putBoolean(key, value).apply();
         android.util.Log.i(TAG, "UI: " + key + " saved = " + value);
         Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
     }
 
     private void putInt(String key, int value) {
-        if (prefs == null) {
-            pendingInt.put(key, value);
-            Toast.makeText(this, "Xposed 服务未连接：改动已暂存，连上后自动保存",
-                    Toast.LENGTH_LONG).show();
-            setConnStatus(false);
-            return;
-        }
         prefs.edit().putInt(key, value).apply();
         android.util.Log.i(TAG, "UI: " + key + " saved = " + value);
         Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
@@ -427,13 +346,6 @@ public class LangOrderActivity extends AppCompatActivity {
                 order.add(e.lang);
                 if (!seenDivider) divider++;
             }
-        }
-        if (prefs == null) {
-            // 顺序/分隔线是两个键，暂存成一个整体没有意义：直接提示
-            Toast.makeText(this, "Xposed 服务未连接，顺序未保存（请点上方\"重新连接\"）",
-                    Toast.LENGTH_LONG).show();
-            setConnStatus(false);
-            return;
         }
         prefs.edit()
                 .putString("order", String.join(",", order))

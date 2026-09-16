@@ -23,6 +23,12 @@
             android:name="xposedminversion"
             android:value="93" />
 
+        <!-- 模块通过它读取 App 的配置（不依赖 XposedService，见 ConfigProvider 注释） -->
+        <provider
+            android:name=".ConfigProvider"
+            android:authorities="moe.lovefirefly.bzk.sougouext.config"
+            android:exported="true" />
+
         <activity
             android:name=".LangOrderActivity"
             android:exported="true"
@@ -32,6 +38,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 模块通过它读取 App 的配置（不依赖 XposedService，见 ConfigProvider 注释） -->
+        <provider
+            android:name=".ConfigProvider"
+            android:authorities="moe.lovefirefly.bzk.sougouext.config"
+            android:exported="true" />
 
         <activity
             android:name=".InfoActivity"

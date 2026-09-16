@@ -1,6 +1,7 @@
 package moe.lovefirefly.bzk.sougouext;
 
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.util.Log;
 
 import java.util.ArrayList;
@@ -22,6 +23,9 @@ final class LangConfig {
 
     private static final String TAG = "SogouOemBridge";
     static final String GROUP = "sogou_lang";
+
+    /** App 侧本地配置文件名（模块通过 ContentProvider 读取，不依赖 LSPosed 服务）。 */
+    static final String PREFS_NAME = "sogouext_config";
     private static final String KEY_ORDER = "order";
     private static final String KEY_DIVIDER = "divider";
     private static final String KEY_STRICT = "strict";
@@ -91,6 +95,78 @@ final class LangConfig {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return defaults();
         }
+    }
+
+    /** App 侧把配置序列化成一行 k=v&k=v（ContentProvider 用）。 */
+    static String dump(SharedPreferences sp) {
+        return "order=" + sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER)
+                + "&divider=" + sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER)
+                + "&strict=" + sp.getBoolean(KEY_STRICT, false)
+                + "&full=" + sp.getBoolean(KEY_FULLWIDTH, false)
+                + "&smart=" + sp.getBoolean(KEY_SMART_PUNCT, true)
+                + "&en=" + sp.getBoolean(KEY_EN_PUNCT, false)
+                + "&num=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
+                + "&slash=" + sp.getInt(KEY_SLASH_MODE, 0);
+    }
+
+    /** 模块侧解析上面那行；失败返回 null。 */
+    static LangConfig parseDump(String s) {
+        if (s == null || s.isEmpty()) return null;
+        try {
+            String order = LangSpec.DEFAULT_ORDER;
+            int divider = LangSpec.DEFAULT_DIVIDER;
+            boolean strict = false;
+            boolean full = false;
+            boolean smart = true;
+            boolean en = false;
+            boolean num = true;
+            int slash = 0;
+            for (String kv : s.split("&")) {
+                final int i = kv.indexOf('=');
+                if (i <= 0) continue;
+                final String k = kv.substring(0, i);
+                final String v = kv.substring(i + 1);
+                switch (k) {
+                    case KEY_ORDER: order = v; break;
+                    case KEY_DIVIDER: divider = Integer.parseInt(v); break;
+                    case KEY_STRICT: strict = Boolean.parseBoolean(v); break;
+                    case KEY_FULLWIDTH: full = Boolean.parseBoolean(v); break;
+                    case KEY_SMART_PUNCT: smart = Boolean.parseBoolean(v); break;
+                    case KEY_EN_PUNCT: en = Boolean.parseBoolean(v); break;
+                    case KEY_SMART_NUMBERING: num = Boolean.parseBoolean(v); break;
+                    case KEY_SLASH_MODE: slash = Integer.parseInt(v); break;
+                    default: break;
+                }
+            }
+            return parse(order, divider, strict, full, smart, en, num, slash);
+        } catch (Throwable err) {
+            Log.w(TAG, "parseDump failed: " + err);
+            return null;
+        }
+    }
+
+    /** 模块侧：优先从 App 的 ContentProvider 读（不依赖 LSPosed 服务）。失败返回 null。 */
+    static LangConfig loadFromProvider(android.content.ContentResolver cr) {
+        return parseDump(readProvider(cr));
+    }
+
+    /** 读原始串（调试/日志用）；失败返回 null。 */
+    static String readProvider(android.content.ContentResolver cr) {
+        if (cr == null) {
+            Log.d(TAG, "provider: no resolver");
+            return null;
+        }
+        try (Cursor c = cr.query(ConfigProvider.URI, null, null, null, null)) {
+            if (c == null) {
+                Log.d(TAG, "provider: null cursor");
+                return null;
+            }
+            if (c.moveToFirst()) return c.getString(0);
+            Log.d(TAG, "provider: empty cursor");
+        } catch (Throwable err) {
+            Log.d(TAG, "provider read failed: " + err);
+        }
+        return null;
     }
 
     static LangConfig defaults() {
