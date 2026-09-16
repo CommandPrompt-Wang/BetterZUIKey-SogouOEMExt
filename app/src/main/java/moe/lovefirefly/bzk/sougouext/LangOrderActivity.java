@@ -91,6 +91,8 @@ public class LangOrderActivity extends AppCompatActivity {
         rv.setLayoutManager(new LinearLayoutManager(this));
         rv.setClipToPadding(false);
         rv.setPadding(0, pad / 2, 0, pad / 2);
+        // 整页可滚动：列表按内容高度撑开，自身不滚动（3 项，拖动仍可用）
+        rv.setNestedScrollingEnabled(false);
         adapter = new Adapter();
         rv.setAdapter(adapter);
         attachDrag(rv);
@@ -129,12 +131,22 @@ public class LangOrderActivity extends AppCompatActivity {
         flp.gravity = Gravity.CENTER_HORIZONTAL;
         flp.setMargins(0, pad / 2, 0, pad);
 
-        root.addView(title);
-        root.addView(hint);
-        root.addView(rv, new LinearLayout.LayoutParams(
+        // 内容全部放进 ScrollView：屏幕矮的时候，下面的开关不会再挡住列表
+        final LinearLayout content = new LinearLayout(this);
+        content.setOrientation(LinearLayout.VERTICAL);
+        content.addView(title);
+        content.addView(hint);
+        content.addView(rv, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(strictBox);
+
+        final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.addView(content);
+
+        root.addView(scroll, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        root.addView(strictBox);
-        root.addView(fab, flp);
+        root.addView(fab, flp);          // FAB 固定在视口底部
         setContentView(root);
         applyInsets(root);
 
