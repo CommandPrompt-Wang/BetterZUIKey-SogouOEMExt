@@ -105,6 +105,66 @@ public final class SogouTranslator {
     /** 最近一次提交出去的最后一个字符（智能编号要判断"前一个是数字"）。 */
     private static volatile char sLastCommittedChar;
 
+    /** 本次 Shift 是否被用于输入大写字母（用于吞掉随后那次 Shift 抬起）。 */
+    private static volatile boolean sShiftUsedForLetter;
+
+    /**
+     * 每个字母键的"大小写意图"（U=大写 l=小写），用于把拼音串/提交内容的大小写还原。
+     *
+     * <p>因为要让搜狗把大写字母当拼音收进去，我们必须把 Shift 剥掉（否则它直接上屏），
+     * 于是它的拼音串会变成小写 —— 这里按用户实际按键把它还原。
+     */
+    private static final StringBuilder sCaseMask = new StringBuilder();
+
+    private static boolean isLetterKey(int kc) {
+        return kc >= KeyEvent.KEYCODE_A && kc <= KeyEvent.KEYCODE_Z;
+    }
+
+    private static boolean looksLikeLetters(CharSequence t) {
+        if (t == null || t.length() == 0) return false;
+        for (int i = 0; i < t.length(); i++) {
+            final char c = t.charAt(i);
+            if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'))) return false;
+        }
+        return true;
+    }
+
+    /** 按记录的按键意图还原大小写；无需改动则返回 null。 */
+    private static String fixCase(CharSequence t) {
+        final int n = t.length();
+        if (sCaseMask.length() < n) return null;
+        final int off = sCaseMask.length() - n;
+        boolean changed = false;
+        final StringBuilder sb = new StringBuilder(n);
+        for (int i = 0; i < n; i++) {
+            char c = t.charAt(i);
+            final boolean upper = sCaseMask.charAt(off + i) == 'U';
+            if (upper != Character.isUpperCase(c)) {
+                c = upper ? Character.toUpperCase(c) : Character.toLowerCase(c);
+                changed = true;
+            }
+            sb.append(c);
+        }
+        return changed ? sb.toString() : null;
+    }
+
+    /** 复制一个 KeyEvent，但抹掉 Shift 修饰（让搜狗把它当小写字母进拼音串）。 */
+    private static KeyEvent withoutShift(final KeyEvent src) {
+        final int meta = src.getMetaState()
+                & ~(KeyEvent.META_SHIFT_ON | KeyEvent.META_SHIFT_LEFT_ON
+                    | KeyEvent.META_SHIFT_RIGHT_ON);
+        final KeyEvent mod = new KeyEvent(src.getDownTime(), src.getEventTime(), src.getAction(),
+                src.getKeyCode(), src.getRepeatCount(), meta, src.getDeviceId(),
+                src.getScanCode(), src.getFlags());
+        try {
+            final java.lang.reflect.Field f = KeyEvent.class.getDeclaredField("mSource");
+            f.setAccessible(true);
+            f.setInt(mod, src.getSource());
+        } catch (Throwable ignored) {
+        }
+        return mod;
+    }
+
     /** 上一次从 provider 读到的原始配置串（用于日志）。 */
     private static volatile String sLastRaw;
 
@@ -306,6 +366,12 @@ public final class SogouTranslator {
                             if (!(a0 instanceof CharSequence)) return chain.proceed();
                             final String src = a0.toString();
                             String out = src;
+                            if (looksLikeLetters(out)) {
+                                final String fc = fixCase(out);
+                                if (fc != null) out = fc;
+                            } else {
+                                sCaseMask.setLength(0);      // 组合结束/非字母 → 重置按键记录
+                            }
                             // 语义层（顺序：斜杠键 → 英/中文标点）
                             // 搜狗把 / 和 \ 都出成 、；这里按"上一个物理按键"区分，二选一原样输出：
                             //   选 \ → 按 \ 出 \，按 / 出 、
@@ -410,6 +476,11 @@ public final class SogouTranslator {
 
                             final int kc2 = kev.getKeyCode();
                             final int meta2 = kev.getMetaState();
+                            if (isLetterKey(kc2)) {
+                                final boolean sh = (meta2 & KeyEvent.META_SHIFT_ON) != 0;
+                                sCaseMask.append(sh ? 'U' : 'l');
+                                if (sCaseMask.length() > 32) sCaseMask.deleteCharAt(0);
+                            }
                             final boolean ctrl = (meta2 & KeyEvent.META_CTRL_ON) != 0;
                             final boolean shift = (meta2 & KeyEvent.META_SHIFT_ON) != 0;
                             // Shift+Space → 全角/半角
@@ -422,6 +493,26 @@ public final class SogouTranslator {
                                     Log.i(TAG, "hotkey Shift+Space -> fullwidth=" + nv + " (saved)");
                                     banner("全角模式：" + (nv ? "开" : "关"));
                                 }
+                                return true;
+                            }
+                            // 大写字母进拼音栏：中文态下剥掉 Shift 交给搜狗，
+                            // 否则它会把大写字母直接上屏，导致 "Dance" 只剩 "ance" 参与候选
+                            final LangConfig ccfg = sConfig;
+                            if (ccfg != null && ccfg.capitalInPinyin && !ctrl
+                                    && shift && rawLanguageState() != 1
+                                    && kc2 >= KeyEvent.KEYCODE_A && kc2 <= KeyEvent.KEYCODE_Z) {
+                                sShiftUsedForLetter = true;
+                                Log.i(TAG, "capital: strip shift -> "
+                                        + KeyEvent.keyCodeToString(kc2));
+                                return chain.proceed(new Object[]{kc2, withoutShift(kev)});
+                            }
+                            // 这次 Shift 被用于字母：吞掉它的抬起，免得搜狗当成"Shift 单击切语言"
+                            // 注意：Shift 抬起事件的 meta 里通常已经不带 SHIFT 位，所以这里只看键码
+                            if (sShiftUsedForLetter && !down
+                                    && (kc2 == KeyEvent.KEYCODE_SHIFT_LEFT
+                                        || kc2 == KeyEvent.KEYCODE_SHIFT_RIGHT)) {
+                                sShiftUsedForLetter = false;
+                                Log.i(TAG, "capital: swallow shift up");
                                 return true;
                             }
                             // Ctrl+. → 中英文标点

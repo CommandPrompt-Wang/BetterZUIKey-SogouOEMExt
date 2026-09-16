@@ -63,6 +63,7 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch fullSwitch;
     private MaterialSwitch enSwitch;
     private MaterialSwitch numSwitch;
+    private MaterialSwitch capSwitch;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
     private SharedPreferences prefs;
@@ -177,6 +178,10 @@ public class LangOrderActivity extends AppCompatActivity {
         hotkeyHint.setPadding(0, 0, 0, pad / 2);
         strictBox.addView(hotkeyHint);
 
+        capSwitch = addSwitch(strictBox, "大写字母进拼音栏",
+                "中文输入时大写字母也进入拼音串，便于用候选/英文补全（例：Dance 会有整词候选）；"
+                + "英文输入状态不受影响");
+
         numSwitch = addSwitch(strictBox, "智能编号",
                 "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
                 + "只作用于紧跟数字的那一下，后续字符照常");
@@ -271,6 +276,7 @@ public class LangOrderActivity extends AppCompatActivity {
         bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
         bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
         bindBoolSwitch(numSwitch, "smartNumbering", cfg.smartNumbering);
+        bindBoolSwitch(capSwitch, "capitalInPinyin", cfg.capitalInPinyin);
         bindSlashSpinner(cfg.slashMode);
     }
 

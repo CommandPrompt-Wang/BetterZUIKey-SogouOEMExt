@@ -34,6 +34,7 @@ final class LangConfig {
     private static final String KEY_EN_PUNCT = "enPunct";
     private static final String KEY_SMART_NUMBERING = "smartNumbering";
     private static final String KEY_SLASH_MODE = "slashMode";
+    private static final String KEY_CAPITAL_PINYIN = "capitalInPinyin";
 
     final List<String> order;
     final int divider;
@@ -56,9 +57,12 @@ final class LangConfig {
     /** 斜杠：0=关（搜狗原样，/ 与 \ 都出 、）；1=原样输出 /；2=原样输出 \。 */
     final int slashMode;
 
+    /** 功能：中文态下大写字母也进拼音串（利用候选/英文补全），默认开。 */
+    final boolean capitalInPinyin;
+
     private LangConfig(List<String> order, int divider, boolean strict,
             boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering,
-            int slashMode) {
+            int slashMode, boolean capitalInPinyin) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
@@ -67,6 +71,7 @@ final class LangConfig {
         this.enPunct = enPunct;
         this.smartNumbering = smartNumbering;
         this.slashMode = slashMode;
+        this.capitalInPinyin = capitalInPinyin;
     }
 
     static LangConfig load(XposedModule module) {
@@ -89,8 +94,9 @@ final class LangConfig {
             final boolean enPunct = sp.getBoolean(KEY_EN_PUNCT, true);
             final boolean smartNumbering = sp.getBoolean(KEY_SMART_NUMBERING, true);
             final int slashMode = sp.getInt(KEY_SLASH_MODE, 0);
+            final boolean capitalInPinyin = sp.getBoolean(KEY_CAPITAL_PINYIN, true);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                    slashMode);
+                    slashMode, capitalInPinyin);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return defaults();
@@ -107,7 +113,8 @@ final class LangConfig {
                 + "&" + KEY_SMART_PUNCT + "=" + sp.getBoolean(KEY_SMART_PUNCT, true)
                 + "&" + KEY_EN_PUNCT + "=" + sp.getBoolean(KEY_EN_PUNCT, true)
                 + "&" + KEY_SMART_NUMBERING + "=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
-                + "&" + KEY_SLASH_MODE + "=" + sp.getInt(KEY_SLASH_MODE, 0);
+                + "&" + KEY_SLASH_MODE + "=" + sp.getInt(KEY_SLASH_MODE, 0)
+                + "&" + KEY_CAPITAL_PINYIN + "=" + sp.getBoolean(KEY_CAPITAL_PINYIN, true);
     }
 
     /** 模块侧解析上面那行；失败返回 null。 */
@@ -122,6 +129,7 @@ final class LangConfig {
             boolean en = false;
             boolean num = true;
             int slash = 0;
+            boolean capital = true;
             for (String kv : s.split("&")) {
                 final int i = kv.indexOf('=');
                 if (i <= 0) continue;
@@ -136,10 +144,11 @@ final class LangConfig {
                     case KEY_EN_PUNCT: en = Boolean.parseBoolean(v); break;
                     case KEY_SMART_NUMBERING: num = Boolean.parseBoolean(v); break;
                     case KEY_SLASH_MODE: slash = Integer.parseInt(v); break;
+                    case KEY_CAPITAL_PINYIN: capital = Boolean.parseBoolean(v); break;
                     default: break;
                 }
             }
-            return parse(order, divider, strict, full, smart, en, num, slash);
+            return parse(order, divider, strict, full, smart, en, num, slash, capital);
         } catch (Throwable err) {
             Log.w(TAG, "parseDump failed: " + err);
             return null;
@@ -209,6 +218,13 @@ final class LangConfig {
 
     static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode) {
+        return parse(raw, divider, strict, fullwidth, smartPunct, enPunct, smartNumbering,
+                slashMode, true);
+    }
+
+    static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
+            boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
+            boolean capitalInPinyin) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -221,7 +237,7 @@ final class LangConfig {
         }
         int d = Math.max(0, Math.min(divider, list.size()));
         return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                slashMode);
+                slashMode, capitalInPinyin);
     }
 
     /** 分隔线上方（轮转集合），按顺序。 */
@@ -249,7 +265,8 @@ final class LangConfig {
     String signature() {
         return String.join(",", order) + "|" + divider + "|strict=" + strict
                 + "|full=" + fullwidth + "|smart=" + smartPunct + "|en=" + enPunct
-                + "|num=" + smartNumbering + "|slash=" + slashMode;
+                + "|num=" + smartNumbering + "|slash=" + slashMode
+                + "|cap=" + capitalInPinyin;
     }
 
     static List<String> defaultOrder() {
