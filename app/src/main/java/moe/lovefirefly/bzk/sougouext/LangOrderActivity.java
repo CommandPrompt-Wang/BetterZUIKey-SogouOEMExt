@@ -63,7 +63,7 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch fullSwitch;
     private MaterialSwitch enSwitch;
     private MaterialSwitch numSwitch;
-    private android.widget.Spinner slashSpinner;
+    private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
     private SharedPreferences prefs;
     private int pad;
@@ -119,16 +119,27 @@ public class LangOrderActivity extends AppCompatActivity {
         slashLabel.setText("原样输出斜杠");
         slashLabel.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodyLarge);
-        slashLabel.setPadding(0, pad / 2, 0, 0);
+        slashLabel.setPadding(0, 0, pad / 2, 0);
+        slashLabel.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));   // 左标签占满剩余宽度 → 下拉右对齐
 
-        slashSpinner = new android.widget.Spinner(this);
-        final android.widget.ArrayAdapter<String> slashAdapter =
-                new android.widget.ArrayAdapter<>(this,
-                        android.R.layout.simple_spinner_item,
-                        new String[]{"关", "/", "\\"});
-        slashAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        slashSpinner.setAdapter(slashAdapter);
-        slashSpinner.setPadding(0, 0, 0, pad / 4);
+        final com.google.android.material.textfield.TextInputLayout til =
+                new com.google.android.material.textfield.TextInputLayout(this);
+        til.setHintEnabled(false);
+        til.setEndIconMode(
+                com.google.android.material.textfield.TextInputLayout.END_ICON_DROPDOWN_MENU);
+        til.setBoxBackgroundColor(themeColor(
+                com.google.android.material.R.attr.colorSurfaceContainerHighest));
+        til.setMinimumWidth((int) (160 * getResources().getDisplayMetrics().density));
+
+        slashField = new com.google.android.material.textfield.MaterialAutoCompleteTextView(this);
+        slashField.setInputType(android.text.InputType.TYPE_NULL);
+        slashField.setFocusable(true);
+        slashField.setClickable(true);
+        slashField.setDropDownWidth(
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        til.addView(slashField, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         final TextView slashHint = new TextView(this);
         slashHint.setTextAppearance(com.google.android.material.R.style
@@ -137,8 +148,13 @@ public class LangOrderActivity extends AppCompatActivity {
         slashHint.setText("搜狗把 / 和 \\ 都输出成 、。选 / 或 \\ 就原样输出该斜杠"
                 + "（全角模式下仍会变 ／ 或 ＼）。");
 
-        strictBox.addView(slashLabel);
-        strictBox.addView(slashSpinner);
+        final LinearLayout slashRow = new LinearLayout(this);
+        slashRow.setOrientation(LinearLayout.HORIZONTAL);
+        slashRow.setGravity(Gravity.CENTER_VERTICAL);
+        slashRow.setPadding(0, pad / 2, 0, 0);
+        slashRow.addView(slashLabel);
+        slashRow.addView(til);
+        strictBox.addView(slashRow);
         strictBox.addView(slashHint);
 
         // 三个功能开关（默认全开）。注意：它们只决定"这个功能是否启用"，
@@ -265,19 +281,15 @@ public class LangOrderActivity extends AppCompatActivity {
      *
      * <p>绑定期间忽略回调（Spinner 会在设置选中项后自己回调一次，否则一进界面就弹"已保存"）。
      */
+    /** 斜杠下拉（BZK 同款：TextInputLayout + MaterialAutoCompleteTextView + dropdown_item_wrap）。 */
     private void bindSlashSpinner(int mode) {
-        slashSpinner.setSelection(Math.max(0, Math.min(mode, 2)));
-        slashSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override public void onItemSelected(android.widget.AdapterView<?> parent,
-                    android.view.View view, int position, long id) {
-                // Spinner 在绑定/布局时会自己回调一次：值没变就什么都不做
-                // （之前用时间标记挡，仍会把已存的值刷成 0 —— 就是这个 bug 把 slashMode 弄丢的）
-                if (position == prefs.getInt("slashMode", 0)) return;
-                putInt("slashMode", position);
-            }
-
-            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {
-            }
+        final String[] items = {"关", "/", "\\"};
+        slashField.setAdapter(new android.widget.ArrayAdapter<>(
+                this, R.layout.dropdown_item_wrap, items));
+        slashField.setText(items[Math.max(0, Math.min(mode, 2))], false);
+        slashField.setOnItemClickListener((parent, view, position, id) -> {
+            if (position == prefs.getInt("slashMode", 0)) return;
+            putInt("slashMode", position);
         });
     }
 

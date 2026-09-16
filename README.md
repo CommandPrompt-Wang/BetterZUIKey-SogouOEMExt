@@ -164,6 +164,10 @@ strict: blocked native switch key KEYCODE_SHIFT_LEFT
 | 层 | 内容 | 位置 | 默认 |
 |---|---|---|---|
 | **功能开关** | 智能中文标点、全角模式、中英文标点、智能编号；下拉「原样输出斜杠」 | App 界面（写本机 prefs） | 全开（斜杠=关） |
+
+> 下拉与 BZK 同款：`TextInputLayout`（`hintEnabled=false` + `endIconMode=dropdown_menu` +
+> `boxBackgroundColor=?attr/colorSurfaceContainerHighest`）+ `MaterialAutoCompleteTextView`
+> （`inputType=none`）+ `res/layout/dropdown_item_wrap.xml` 条目。
 | **状态位** | 当前是**全角还是半角**、**中文还是英文标点** | **不在界面**：模块自己的 SharedPreferences（搜狗进程 `sougouext_state`），快捷键切换并立即落盘 | 半角 + 中文标点 |
 
 - `Shift+Space` → 全角 / 半角（切完弹横幅，状态持久化）
