@@ -28,6 +28,7 @@ final class LangConfig {
     private static final String KEY_FULLWIDTH = "fullwidth";
     private static final String KEY_SMART_PUNCT = "smartPunct";
     private static final String KEY_EN_PUNCT = "enPunct";
+    private static final String KEY_SMART_NUMBERING = "smartNumbering";
 
     final List<String> order;
     final int divider;
@@ -44,14 +45,18 @@ final class LangConfig {
     /** 开关3：中英文标点切换（true=按键盘显示的标点输出，优先于开关1）。 */
     final boolean enPunct;
 
+    /** 开关4：智能编号 —— 数字后面的 。/） 自动用半角（1.  2) 这种）。 */
+    final boolean smartNumbering;
+
     private LangConfig(List<String> order, int divider, boolean strict,
-            boolean fullwidth, boolean smartPunct, boolean enPunct) {
+            boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
         this.fullwidth = fullwidth;
         this.smartPunct = smartPunct;
         this.enPunct = enPunct;
+        this.smartNumbering = smartNumbering;
     }
 
     static LangConfig load(XposedModule module) {
@@ -63,17 +68,18 @@ final class LangConfig {
             final boolean fullwidth = sp.getBoolean(KEY_FULLWIDTH, false);
             final boolean smartPunct = sp.getBoolean(KEY_SMART_PUNCT, true);
             final boolean enPunct = sp.getBoolean(KEY_EN_PUNCT, false);
-            return parse(raw, div, strict, fullwidth, smartPunct, enPunct);
+            final boolean smartNumbering = sp.getBoolean(KEY_SMART_NUMBERING, true);
+            return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
-                    false, false, true, false);
+                    false, false, true, false, true);
         }
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
     static LangConfig parse(String raw, int divider) {
-        return parse(raw, divider, false, false, true, false);
+        return parse(raw, divider, false, false, true, false, true);
     }
 
     static LangConfig parse(String raw, int divider, boolean strict) {
@@ -81,11 +87,16 @@ final class LangConfig {
     }
 
     static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth) {
-        return parse(raw, divider, strict, fullwidth, true, false);
+        return parse(raw, divider, strict, fullwidth, true, false, true);
     }
 
     static LangConfig parse(String raw, int divider, boolean strict,
             boolean fullwidth, boolean smartPunct, boolean enPunct) {
+        return parse(raw, divider, strict, fullwidth, smartPunct, enPunct, true);
+    }
+
+    static LangConfig parse(String raw, int divider, boolean strict,
+            boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -97,7 +108,7 @@ final class LangConfig {
             if (!list.contains(id)) list.add(id);
         }
         int d = Math.max(0, Math.min(divider, list.size()));
-        return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct);
+        return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct, smartNumbering);
     }
 
     /** 分隔线上方（轮转集合），按顺序。 */
@@ -124,7 +135,8 @@ final class LangConfig {
 
     String signature() {
         return String.join(",", order) + "|" + divider + "|strict=" + strict
-                + "|full=" + fullwidth + "|smart=" + smartPunct + "|en=" + enPunct;
+                + "|full=" + fullwidth + "|smart=" + smartPunct + "|en=" + enPunct
+                + "|num=" + smartNumbering;
     }
 
     static List<String> defaultOrder() {

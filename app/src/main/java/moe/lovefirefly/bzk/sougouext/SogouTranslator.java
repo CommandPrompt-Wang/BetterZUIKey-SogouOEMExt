@@ -102,6 +102,9 @@ public final class SogouTranslator {
     /** 最近一次按下的 / 或 \ （搜狗都产 、，反向映射靠它消歧）。 */
     private static volatile char sLastSlashKey;
 
+    /** 最近一次提交出去的最后一个字符（智能编号要判断"前一个是数字"）。 */
+    private static volatile char sLastCommittedChar;
+
     /** 快捷键切换出来的运行期状态（null = 用配置里的默认值）。 */
     private static volatile Boolean sRuntimeFull;
     private static volatile Boolean sRuntimeEn;
@@ -274,12 +277,20 @@ public final class SogouTranslator {
                                 final String r = PunctPipeline.toChinesePunct(out);
                                 if (r != null) out = r;
                             }
+                            // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）
+                            if (cfg.smartNumbering
+                                    && sLastCommittedChar >= '0' && sLastCommittedChar <= '9') {
+                                if ("。".equals(out)) out = ".";
+                                else if ("）".equals(out)) out = ")";
+                            }
                             // 形式层：全角 / 半角
                             final boolean full = currentFullWidth();
                             final String w = full
                                     ? PunctPipeline.toFullWidth(out)
                                     : PunctPipeline.toHalfWidth(out);
                             if (w != null) out = w;
+                            sLastCommittedChar = out.isEmpty() ? 0
+                                    : out.charAt(out.length() - 1);
                             if (out.equals(src)) return chain.proceed();
                             final Object[] args = chain.getArgs().toArray();
                             args[0] = out;
