@@ -211,6 +211,33 @@ CHINESE: ，。、、；：！？（）【】《》“‘＋－＊＝｛｝｜�
 （`NotificationService: Suppressing toast ... by user request`；BZK 能弹是因为它在 system_server）。
 改用输入法窗口上的 `PopupWindow` 横幅：贴底居中、离底约屏幕高 12%，1.2 秒消失。
 
+## 3.7 中文态大写字母（`capitalInPinyin`）
+
+**动机**：中文态下搜狗把大写字母**直接上屏**，等于 `Dance` 只有 `ance` 进拼音，
+整词候选就没了。开着这个开关时，模块在按键层把大写字母的 Shift **剥掉**再交给搜狗
+（于是整词进拼音），然后在**上屏时**按记录把大小写还原。
+
+**只记意图、上屏还原** —— 记的是"这一段组合里每个字母键有没有带 Shift"（`U`/`l`），
+上屏走 `commitText` 时套回字母串。**候选栏/拼音栏里那串拼音保持搜狗原样（小写）**：
+那是搜狗自绘的（整个 APK 里没有 `android.widget.TextView`），且它的内部缓存
+（`IMECoreInterface#updateComposingCache` 的 `UP`）同时喂给内部正则与提交判断，
+改显示的收益低、风险高，明确不做。
+
+| 输入 | 上屏 |
+|---|---|
+| `Shift+D` + `ance` | `Dance` |
+| `dancehello`（d/h 大写） | `DanceHello` |
+| 无 Shift | 原样不动 |
+
+**三条必须守住的规则**（都踩过）：
+
+1. **只在 `key-down` 记一次** —— 按键钩子同时挂 `onKeyDown`/`onKeyUp`，两边都记会把
+   一个字母记成两个（`Dance` → `UllllUllll`），尾部对齐取到全小写，现象是
+   "`da` 正常、从 `dan` 起变回小写"。
+2. **记录长度必须与字母数完全相等**，否则返回 `null` 一个字不动 —— 残留记录不许乱改。
+3. **先还原、再清记录**（`fixCase` 在 `onCompositionEnded()` 之前）；且只有 `commitText`
+   才清，空格等不能中途清，否则 `dance hello` 里前一段的大写意图会被吃掉。
+
 ## 4. BZK 侧（另一侧的配合）
 
 `IMEDispatcher.switchCurrentImeSubtype()` 现在**统一**为"在本输入法内前进到下一个 subtype"：

@@ -129,16 +129,20 @@ public final class SogouTranslator {
         return true;
     }
 
-    /** 按记录的按键意图还原大小写；无需改动则返回 null。 */
+    /**
+     * 按记录的按键意图还原大小写；无需改动则返回 {@code null}。
+     *
+     * <p>要求记录长度与字母数<b>完全相等</b>：对不上说明记录不是这一段的
+     * （上一段残留），此时一个字都不动 —— 宁可不大写，也不能把无关内容改错。
+     */
     private static String fixCase(CharSequence t) {
         final int n = t.length();
-        if (sCaseMask.length() < n) return null;
-        final int off = sCaseMask.length() - n;
+        if (sCaseMask.length() != n) return null;
         boolean changed = false;
         final StringBuilder sb = new StringBuilder(n);
         for (int i = 0; i < n; i++) {
             char c = t.charAt(i);
-            final boolean upper = sCaseMask.charAt(off + i) == 'U';
+            final boolean upper = sCaseMask.charAt(i) == 'U';
             if (upper != Character.isUpperCase(c)) {
                 c = upper ? Character.toUpperCase(c) : Character.toLowerCase(c);
                 changed = true;
@@ -237,6 +241,15 @@ public final class SogouTranslator {
     private SogouTranslator() {}
 
     private static volatile boolean sCommandTrace;
+
+    /**
+     * 这一段组合结束（上屏了）：清空按键意图，下一段重新记录。
+     *
+     * <p>必须"先用掉记录再清" —— 顺序反了就是刚记完就删，上屏永远小写（踩过）。
+     */
+    static void onCompositionEnded() {
+        sCaseMask.setLength(0);
+    }
 
     /** 当前 IME 服务对象（探针用）。 */
     static Object service() {
@@ -365,13 +378,23 @@ public final class SogouTranslator {
                             final Object a0 = chain.getArg(0);
                             if (!(a0 instanceof CharSequence)) return chain.proceed();
                             final String src = a0.toString();
+                            final boolean commit = n.equals("commitText");
+                            if (BridgeHook.DEV_KEY_LOG) {
+                                Log.i(TAG, "IC " + n + " " + src + " mask=" + sCaseMask);
+                            }
                             String out = src;
+                            // 先把按键意图用掉，再清 —— 顺序反了就是"刚记录完就删掉"，
+                            // 表现是上屏永远小写（踩过）。
                             if (looksLikeLetters(out)) {
                                 final String fc = fixCase(out);
-                                if (fc != null) out = fc;
-                            } else {
-                                sCaseMask.setLength(0);      // 组合结束/非字母 → 重置按键记录
+                                if (fc != null && !fc.equals(out)) {
+                                    Log.i(TAG, "case: commit " + out + " -> " + fc);
+                                    out = fc;
+                                }
                             }
+                            // 只有上屏才结束这一段；空格等不能中途清记录，
+                            // 否则 "dance hello" 里前面那段的大写意图会被吃掉。
+                            if (commit) onCompositionEnded();
                             // 语义层（顺序：斜杠键 → 英/中文标点）
                             // 搜狗把 / 和 \ 都出成 、；这里按"上一个物理按键"区分，二选一原样输出：
                             //   选 \ → 按 \ 出 \，按 / 出 、
@@ -476,7 +499,10 @@ public final class SogouTranslator {
 
                             final int kc2 = kev.getKeyCode();
                             final int meta2 = kev.getMetaState();
-                            if (isLetterKey(kc2)) {
+                            // 只在"按下"记一次！这三行同时挂在 onKeyDown / onKeyUp 上，
+                            // 两边都记会让一个字母变成两个（Dance -> UllllUllll），
+                            // 长度对不上后大小写还原就全错（表现：从某个字母起变回小写）。
+                            if (down && isLetterKey(kc2)) {
                                 final boolean sh = (meta2 & KeyEvent.META_SHIFT_ON) != 0;
                                 sCaseMask.append(sh ? 'U' : 'l');
                                 if (sCaseMask.length() > 32) sCaseMask.deleteCharAt(0);
