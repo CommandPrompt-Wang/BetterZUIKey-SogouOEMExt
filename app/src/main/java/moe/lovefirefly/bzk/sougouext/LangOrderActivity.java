@@ -64,7 +64,6 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch enSwitch;
     private MaterialSwitch numSwitch;
     private android.widget.Spinner slashSpinner;
-    private boolean slashBinding;
 
     private SharedPreferences prefs;
     private int pad;
@@ -142,15 +141,25 @@ public class LangOrderActivity extends AppCompatActivity {
         strictBox.addView(slashSpinner);
         strictBox.addView(slashHint);
 
+        // 三个功能开关（默认全开）。注意：它们只决定"这个功能是否启用"，
+        // 具体当前是中文/英文标点、全角/半角属于"状态位"，由快捷键切换并持久化，不在界面显示。
         smartSwitch = addSwitch(strictBox, "智能中文标点",
-                "在中文输入时使用更合理的标点映射，不再将 + - #等转为全角。");
+                "功能开关。启用后中文态使用中文标点映射（+ - # 等仍按半角处理）；"
+                + "当前是中文还是英文标点见下方快捷键说明");
         fullSwitch = addSwitch(strictBox, "全角模式",
-                "快捷键 Shift+Space（**只是临时切换，不改变本开关**）。"
-                + "开启后标点/字母/空格变全角；关闭则半角");
-        enSwitch = addSwitch(strictBox, "中英文标点切换",
-                "快捷键 Ctrl+.（**只是临时切换，不改变本开关**）。"
-                + "开启后按键盘显示的标点输出（ASCII），优先于\"智能中文标点\"；"
-                + "英文态本身就会用英文标点，无需此开关");
+                "功能开关。启用后可用 Shift+Space 在全角/半角之间切换（状态自动记忆）");
+        enSwitch = addSwitch(strictBox, "中英文标点",
+                "功能开关。启用后可用 Ctrl+. 在中文标点/英文标点之间切换（状态自动记忆）；"
+                + "英文输入状态下标点恒为英文");
+
+        final TextView hotkeyHint = new TextView(this);
+        hotkeyHint.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        hotkeyHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        hotkeyHint.setText("当前状态（快捷键切换，自动记住，不在界面显示）："
+                + "Shift+Space 全角/半角，Ctrl+. 中文标点/英文标点");
+        hotkeyHint.setPadding(0, 0, 0, pad / 2);
+        strictBox.addView(hotkeyHint);
 
         numSwitch = addSwitch(strictBox, "智能编号",
                 "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
@@ -190,10 +199,16 @@ public class LangOrderActivity extends AppCompatActivity {
 
         // 配置存在本机（模块通过 ContentProvider 读取），不需要任何框架服务
         prefs = getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
+        // 功能开关默认全开：strict 首次运行按"是否装了 BZK"给默认值
+        if (!prefs.contains("strict")) {
+            final boolean bzk = hasBetterZUIKey();
+            prefs.edit().putBoolean("strict", bzk).apply();
+            android.util.Log.i(TAG, "UI: seed strict=" + bzk + " (first run)");
+        }
         final LangConfig cfg0 = LangConfig.load(prefs);
         rebuildFromModel(cfg0.order, cfg0.divider);
         bindStrictSwitch(cfg0.strict);
-        bindPunctSwitches(cfg0);
+
     }
 
     /**
@@ -238,6 +253,9 @@ public class LangOrderActivity extends AppCompatActivity {
         bindBoolSwitch(smartSwitch, "smartPunct", cfg.smartPunct);
         bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
         bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
+        bindBoolSwitch(smartSwitch, "smartPunct", cfg.smartPunct);
+        bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
+        bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
         bindBoolSwitch(numSwitch, "smartNumbering", cfg.smartNumbering);
         bindSlashSpinner(cfg.slashMode);
     }
@@ -248,19 +266,19 @@ public class LangOrderActivity extends AppCompatActivity {
      * <p>绑定期间忽略回调（Spinner 会在设置选中项后自己回调一次，否则一进界面就弹"已保存"）。
      */
     private void bindSlashSpinner(int mode) {
-        slashBinding = true;
         slashSpinner.setSelection(Math.max(0, Math.min(mode, 2)));
         slashSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(android.widget.AdapterView<?> parent,
                     android.view.View view, int position, long id) {
-                if (slashBinding) return;
+                // Spinner 在绑定/布局时会自己回调一次：值没变就什么都不做
+                // （之前用时间标记挡，仍会把已存的值刷成 0 —— 就是这个 bug 把 slashMode 弄丢的）
+                if (position == prefs.getInt("slashMode", 0)) return;
                 putInt("slashMode", position);
             }
 
             @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {
             }
         });
-        slashSpinner.post(() -> slashBinding = false);
     }
 
     private void bindBoolSwitch(MaterialSwitch sw, String key, boolean checked) {

@@ -108,22 +108,56 @@ public final class SogouTranslator {
     /** 上一次从 provider 读到的原始配置串（用于日志）。 */
     private static volatile String sLastRaw;
 
-    /** 快捷键切换出来的运行期状态（null = 用配置里的默认值）。 */
-    private static volatile Boolean sRuntimeFull;
-    private static volatile Boolean sRuntimeEn;
+    /**
+     * 两个"模式"（全半角 / 中英标点）的状态。
+     *
+     * <p>它们不占 App 界面，只由快捷键切换，所以存在**模块自己**的 SharedPreferences 里
+     * （搜狗进程的 files 目录，天然持久化）；App 的 ContentProvider 只管功能开关。
+     * 默认：半角、中文标点。
+     */
+    private static final String STATE_PREFS = "sougouext_state";
+    private static final String KEY_FULL = "fullwidth";
+    private static final String KEY_MODE_EN = "enPunct";
+
+    private static volatile Boolean sFull;
+    private static volatile Boolean sModeEn;
+
+    private static android.content.SharedPreferences statePrefs() {
+        try {
+            final Object app = Class.forName("android.app.ActivityThread")
+                    .getMethod("currentApplication").invoke(null);
+            if (app instanceof android.content.Context) {
+                return ((android.content.Context) app)
+                        .getSharedPreferences(STATE_PREFS, android.content.Context.MODE_PRIVATE);
+            }
+        } catch (Throwable err) {
+            Log.d(TAG, "statePrefs unavailable: " + err);
+        }
+        return null;
+    }
 
     static boolean currentFullWidth() {
-        final Boolean rt = sRuntimeFull;
-        if (rt != null) return rt;
         final LangConfig cfg = sConfig;
-        return cfg != null && cfg.fullwidth;
+        if (cfg == null || !cfg.fullwidth) return false;   // 功能开关关 → 恒半角
+        Boolean v = sFull;
+        if (v == null) {
+            final android.content.SharedPreferences sp = statePrefs();
+            v = sp != null && sp.getBoolean(KEY_FULL, false);
+            sFull = v;
+        }
+        return v;
     }
 
     static boolean currentEnPunct() {
-        final Boolean rt = sRuntimeEn;
-        if (rt != null) return rt;
         final LangConfig cfg = sConfig;
-        return cfg != null && cfg.enPunct;
+        if (cfg == null || !cfg.enPunct) return false;     // 功能开关关 → 恒中文标点
+        Boolean v = sModeEn;
+        if (v == null) {
+            final android.content.SharedPreferences sp = statePrefs();
+            v = sp != null && sp.getBoolean(KEY_MODE_EN, false);
+            sModeEn = v;
+        }
+        return v;
     }
 
     /** marker 推进单飞：setInputView 与 onStartInputView 会各触发一次，避免两个线程互抢。 */
@@ -318,7 +352,7 @@ public final class SogouTranslator {
                                     + (full ? " [full]" : " [half]")
                                     + (slashHandled ? " [slash=" + cfg.slashMode + "]"
                                        : currentEnPunct() || english ? " [en]"
-                                       : cfg.smartPunct ? " [smart]" : ""));
+                                       : cfg.smartPunct ? " [cn]" : " [raw]"));
                             return chain.proceed(args);
                         });
                         Log.i(TAG, "punct hooked " + c.getSimpleName() + "#" + n);
@@ -381,18 +415,24 @@ public final class SogouTranslator {
                             // Shift+Space → 全角/半角
                             if (kc2 == KeyEvent.KEYCODE_SPACE && shift && !ctrl) {
                                 if (down && kev.getRepeatCount() == 0) {
-                                    sRuntimeFull = !currentFullWidth();
-                                    Log.i(TAG, "hotkey Shift+Space -> fullwidth=" + sRuntimeFull);
-                                    banner("全角模式：" + (sRuntimeFull ? "开" : "关"));
+                                    final boolean nv = !currentFullWidth();
+                                    sFull = nv;
+                                    final android.content.SharedPreferences sp = statePrefs();
+                                    if (sp != null) sp.edit().putBoolean(KEY_FULL, nv).apply();
+                                    Log.i(TAG, "hotkey Shift+Space -> fullwidth=" + nv + " (saved)");
+                                    banner("全角模式：" + (nv ? "开" : "关"));
                                 }
                                 return true;
                             }
                             // Ctrl+. → 中英文标点
                             if (kc2 == KeyEvent.KEYCODE_PERIOD && ctrl) {
                                 if (down && kev.getRepeatCount() == 0) {
-                                    sRuntimeEn = !currentEnPunct();
-                                    Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + sRuntimeEn);
-                                    banner("中英文标点：" + (sRuntimeEn ? "英文标点" : "中文标点"));
+                                    final boolean nv = !currentEnPunct();
+                                    sModeEn = nv;
+                                    final android.content.SharedPreferences sp = statePrefs();
+                                    if (sp != null) sp.edit().putBoolean(KEY_MODE_EN, nv).apply();
+                                    Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + nv + " (saved)");
+                                    banner("标点模式：" + (nv ? "英文标点" : "中文标点"));
                                 }
                                 return true;
                             }

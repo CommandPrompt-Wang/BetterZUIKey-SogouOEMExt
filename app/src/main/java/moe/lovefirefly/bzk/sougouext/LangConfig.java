@@ -84,9 +84,9 @@ final class LangConfig {
             final String raw = sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER);
             final int div = sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER);
             final boolean strict = sp.getBoolean(KEY_STRICT, false);
-            final boolean fullwidth = sp.getBoolean(KEY_FULLWIDTH, false);
+            final boolean fullwidth = sp.getBoolean(KEY_FULLWIDTH, true);
             final boolean smartPunct = sp.getBoolean(KEY_SMART_PUNCT, true);
-            final boolean enPunct = sp.getBoolean(KEY_EN_PUNCT, false);
+            final boolean enPunct = sp.getBoolean(KEY_EN_PUNCT, true);
             final boolean smartNumbering = sp.getBoolean(KEY_SMART_NUMBERING, true);
             final int slashMode = sp.getInt(KEY_SLASH_MODE, 0);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
@@ -103,9 +103,9 @@ final class LangConfig {
         return KEY_ORDER + "=" + sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER)
                 + "&" + KEY_DIVIDER + "=" + sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER)
                 + "&" + KEY_STRICT + "=" + sp.getBoolean(KEY_STRICT, false)
-                + "&" + KEY_FULLWIDTH + "=" + sp.getBoolean(KEY_FULLWIDTH, false)
+                + "&" + KEY_FULLWIDTH + "=" + sp.getBoolean(KEY_FULLWIDTH, true)
                 + "&" + KEY_SMART_PUNCT + "=" + sp.getBoolean(KEY_SMART_PUNCT, true)
-                + "&" + KEY_EN_PUNCT + "=" + sp.getBoolean(KEY_EN_PUNCT, false)
+                + "&" + KEY_EN_PUNCT + "=" + sp.getBoolean(KEY_EN_PUNCT, true)
                 + "&" + KEY_SMART_NUMBERING + "=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
                 + "&" + KEY_SLASH_MODE + "=" + sp.getInt(KEY_SLASH_MODE, 0);
     }
