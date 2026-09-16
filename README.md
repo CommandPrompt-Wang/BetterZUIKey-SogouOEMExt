@@ -213,6 +213,33 @@ synchronized(ImfLock) {
 `com.sohu.inputmethod.sogou.oem`；语言顺序配置存在模块包名对应的 remote preferences 里，
 新包名会是**默认配置**，需要重新拖一次。
 
+## CI（与 BZK 同一套）
+
+| workflow | 触发 | 做什么 |
+|---|---|---|
+| `android-ci.yml` | PR → `main` | `./gradlew assembleDebug` |
+| `nightly-build.yml` | push 到 `dev` 且 commit 以 `[Nightly]` 开头 | 用 CI 密钥签名，上传 artifact |
+| `release-apk.yml` | GitHub Release 发布 | 签名打包 → 传到 Release → 镜像到 LSPosed 官方仓库 |
+
+**需要填的 secrets**
+
+| 名字 | 内容 |
+|---|---|
+| `SIGNING_KEYSTORE` | `app-sign.keystore` 的 base64（本地已生成 `app-sign.keystore.b64`，`cat` 出来即可；该文件不入库） |
+| `SIGNING_PASS` | keystore 密码（`keystore.properties` 里的 `storePassword` / `keyPassword`，两者相同） |
+| `LSPOSED_REPO_TOKEN` | 可选。镜像到 `Xposed-Modules-Repo/moe.lovefirefly.bzk.sougouext` 用的 PAT；**不填则自动跳过该步** |
+
+keyAlais 在 workflow 里写死为 `betterzuikey.sign`（同一套签名配置 / alias）。
+
+**版号与 tag（模仿 BZK）**
+
+- 版本写在 `app/build.gradle.kts` 的 `versionCode` / `versionName`（当前 `1` / `1.0.0`）；
+- APK 命名：`BetterZUIKey-SougouOEMExt-v<versionName>.apk`；
+- LSPosed 镜像 tag：`<versionCode>-<versionName>`（当前 `1-1.0.0`）。
+
+> nightly 那个 workflow 是按 BZK 原样镜像的（`dev` + `[Nightly]` 前缀）；本仓库目前只有 `main`，
+> 想让它跑就需要建一个 `dev` 分支。
+
 ## 许可
 
 GPL-3.0
