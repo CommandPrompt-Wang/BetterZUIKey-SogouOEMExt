@@ -272,19 +272,30 @@ public final class SogouTranslator {
                             if (!(a0 instanceof CharSequence)) return chain.proceed();
                             final String src = a0.toString();
                             String out = src;
-                            // 语义层：开关3 优先于开关1（快捷键可临时覆盖）
-                            if (currentEnPunct()) {
-                                final String r = PunctPipeline.toAsciiPunct(out, sLastSlashKey);
-                                if (r != null) out = r;
-                            } else if (cfg.smartPunct) {
-                                final String r = PunctPipeline.toChinesePunct(out);
-                                if (r != null) out = r;
-                            }
-                            // 斜杠：搜狗把 / 和 \ 都出成 、；这里按设置原样还原成 / 或 \
-                            // （属于语义层，随后仍会被形式层决定全角/半角）
+                            // 语义层（顺序：斜杠键 → 英/中文标点）
+                            // 搜狗把 / 和 \ 都出成 、；这里按"上一个物理按键"区分，二选一原样输出：
+                            //   选 \ → 按 \ 出 \，按 / 出 、
+                            //   选 /  → 按 / 出 /，按 \ 出 、
+                            //   关    → 两个都出 、（英文标点模式下再由下面的分支转成 ASCII）
+                            boolean slashHandled = false;
                             if (cfg.slashMode != 0 && out.indexOf('、') >= 0) {
-                                out = out.replace('、',
-                                        cfg.slashMode == 1 ? '/' : '\\');
+                                final char want = (cfg.slashMode == 1) ? '/' : '\\';
+                                slashHandled = true;
+                                if (sLastSlashKey == want) {
+                                    out = out.replace('、', want);
+                                }
+                                // 另一个键：保持 、
+                            }
+                            // 英文态一律英文标点；中文态下开关3 优先于开关1
+                            final boolean english = rawLanguageState() == 1;
+                            if (!slashHandled) {
+                                if (currentEnPunct() || english) {
+                                    final String r = PunctPipeline.toAsciiPunct(out, sLastSlashKey);
+                                    if (r != null) out = r;
+                                } else if (cfg.smartPunct) {
+                                    final String r = PunctPipeline.toChinesePunct(out);
+                                    if (r != null) out = r;
+                                }
                             }
                             // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）
                             if (cfg.smartNumbering
@@ -305,7 +316,8 @@ public final class SogouTranslator {
                             args[0] = out;
                             Log.i(TAG, "punct: " + src + " -> " + out
                                     + (full ? " [full]" : " [half]")
-                                    + (currentEnPunct() ? " [en]"
+                                    + (slashHandled ? " [slash=" + cfg.slashMode + "]"
+                                       : currentEnPunct() || english ? " [en]"
                                        : cfg.smartPunct ? " [smart]" : ""));
                             return chain.proceed(args);
                         });

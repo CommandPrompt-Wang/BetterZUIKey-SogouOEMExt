@@ -99,14 +99,15 @@ final class LangConfig {
 
     /** App 侧把配置序列化成一行 k=v&k=v（ContentProvider 用）。 */
     static String dump(SharedPreferences sp) {
-        return "order=" + sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER)
-                + "&divider=" + sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER)
-                + "&strict=" + sp.getBoolean(KEY_STRICT, false)
-                + "&full=" + sp.getBoolean(KEY_FULLWIDTH, false)
-                + "&smart=" + sp.getBoolean(KEY_SMART_PUNCT, true)
-                + "&en=" + sp.getBoolean(KEY_EN_PUNCT, false)
-                + "&num=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
-                + "&slash=" + sp.getInt(KEY_SLASH_MODE, 0);
+        // 键名必须和 parseDump 里认的完全一致（曾经写成 full/smart/en/num/slash 导致全部读不到）
+        return KEY_ORDER + "=" + sp.getString(KEY_ORDER, LangSpec.DEFAULT_ORDER)
+                + "&" + KEY_DIVIDER + "=" + sp.getInt(KEY_DIVIDER, LangSpec.DEFAULT_DIVIDER)
+                + "&" + KEY_STRICT + "=" + sp.getBoolean(KEY_STRICT, false)
+                + "&" + KEY_FULLWIDTH + "=" + sp.getBoolean(KEY_FULLWIDTH, false)
+                + "&" + KEY_SMART_PUNCT + "=" + sp.getBoolean(KEY_SMART_PUNCT, true)
+                + "&" + KEY_EN_PUNCT + "=" + sp.getBoolean(KEY_EN_PUNCT, false)
+                + "&" + KEY_SMART_NUMBERING + "=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
+                + "&" + KEY_SLASH_MODE + "=" + sp.getInt(KEY_SLASH_MODE, 0);
     }
 
     /** 模块侧解析上面那行；失败返回 null。 */
@@ -167,6 +168,15 @@ final class LangConfig {
             Log.d(TAG, "provider read failed: " + err);
         }
         return null;
+    }
+
+    /** 自检：dump(parse(x)) 应该等于 x 的关键项（防止键名两边写歪）。 */
+    static String dumpRoundTripCheck(SharedPreferences sp) {
+        final LangConfig a = load(sp);
+        final LangConfig b = parseDump(dump(sp));
+        if (b == null) return "parseDump returned null";
+        return a.signature().equals(b.signature()) ? "ok"
+                : "MISMATCH\n  stored: " + a.signature() + "\n  dumped: " + b.signature();
     }
 
     static LangConfig defaults() {
