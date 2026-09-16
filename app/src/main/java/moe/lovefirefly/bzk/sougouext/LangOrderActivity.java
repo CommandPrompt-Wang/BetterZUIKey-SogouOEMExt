@@ -65,6 +65,8 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch fullSwitch;
     private MaterialSwitch enSwitch;
     private MaterialSwitch numSwitch;
+    private android.widget.Spinner slashSpinner;
+    private boolean slashBinding;
     private SharedPreferences prefs;
     private int pad;
 
@@ -114,6 +116,32 @@ public class LangOrderActivity extends AppCompatActivity {
 
         strictBox.addView(strictSwitch);
         strictBox.addView(strictHint);
+        // 斜杠下拉：关 / / / \ （语义层，随后仍受全半角影响）
+        final TextView slashLabel = new TextView(this);
+        slashLabel.setText("原样输出斜杠");
+        slashLabel.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyLarge);
+        slashLabel.setPadding(0, pad / 2, 0, 0);
+
+        slashSpinner = new android.widget.Spinner(this);
+        final android.widget.ArrayAdapter<String> slashAdapter =
+                new android.widget.ArrayAdapter<>(this,
+                        android.R.layout.simple_spinner_item,
+                        new String[]{"关", "/", "\\"});
+        slashAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        slashSpinner.setAdapter(slashAdapter);
+        slashSpinner.setPadding(0, 0, 0, pad / 4);
+
+        final TextView slashHint = new TextView(this);
+        slashHint.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        slashHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        slashHint.setText("搜狗把 / 和 \\ 都输出成 、。选 / 或 \\ 就原样输出该斜杠"
+                + "（全角模式下仍会变 ／ 或 ＼）。");
+
+        strictBox.addView(slashLabel);
+        strictBox.addView(slashSpinner);
+        strictBox.addView(slashHint);
 
         smartSwitch = addSwitch(strictBox, "智能中文标点",
                 "在中文输入时使用更合理的标点映射，不再将 + - #等转为全角。");
@@ -121,6 +149,7 @@ public class LangOrderActivity extends AppCompatActivity {
                 "快捷键 Shift+Space。开启后标点/字母/空格变全角；关闭则半角");
         enSwitch = addSwitch(strictBox, "中英文标点切换",
                 "快捷键 Ctrl+. 。开启后按键盘显示的标点输出（ASCII），优先于\"智能中文标点\"");
+
         numSwitch = addSwitch(strictBox, "智能编号",
                 "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
                 + "只作用于紧跟数字的那一下，后续字符照常");
@@ -230,6 +259,37 @@ public class LangOrderActivity extends AppCompatActivity {
         bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
         bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
         bindBoolSwitch(numSwitch, "smartNumbering", cfg.smartNumbering);
+        bindSlashSpinner(cfg.slashMode);
+    }
+
+    /**
+     * 斜杠下拉：0=关 1=/ 2=\ 。
+     *
+     * <p>绑定期间忽略回调（Spinner 会在设置选中项后自己回调一次，否则一进界面就弹"已保存"）。
+     */
+    private void bindSlashSpinner(int mode) {
+        slashBinding = true;
+        slashSpinner.setSelection(Math.max(0, Math.min(mode, 2)));
+        slashSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(android.widget.AdapterView<?> parent,
+                    android.view.View view, int position, long id) {
+                if (slashBinding) return;
+                if (prefs == null) {
+                    Toast.makeText(LangOrderActivity.this,
+                            "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
+                            Toast.LENGTH_LONG).show();
+                    return;
+                }
+                prefs.edit().putInt("slashMode", position).apply();
+                android.util.Log.i(TAG, "UI: slashMode saved = " + position);
+                Toast.makeText(LangOrderActivity.this, "已保存（最多 2 秒生效）",
+                        Toast.LENGTH_SHORT).show();
+            }
+
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) {
+            }
+        });
+        slashSpinner.post(() -> slashBinding = false);
     }
 
     private void bindBoolSwitch(MaterialSwitch sw, String key, boolean checked) {

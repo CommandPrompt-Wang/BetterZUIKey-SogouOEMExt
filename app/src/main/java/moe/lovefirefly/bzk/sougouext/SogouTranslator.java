@@ -277,6 +277,12 @@ public final class SogouTranslator {
                                 final String r = PunctPipeline.toChinesePunct(out);
                                 if (r != null) out = r;
                             }
+                            // 斜杠：搜狗把 / 和 \ 都出成 、；这里按设置原样还原成 / 或 \
+                            // （属于语义层，随后仍会被形式层决定全角/半角）
+                            if (cfg.slashMode != 0 && out.indexOf('、') >= 0) {
+                                out = out.replace('、',
+                                        cfg.slashMode == 1 ? '/' : '\\');
+                            }
                             // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）
                             if (cfg.smartNumbering
                                     && sLastCommittedChar >= '0' && sLastCommittedChar <= '9') {
