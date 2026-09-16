@@ -224,6 +224,7 @@ public class LangOrderActivity extends AppCompatActivity {
         final LangConfig cfg0 = LangConfig.load(prefs);
         rebuildFromModel(cfg0.order, cfg0.divider);
         bindStrictSwitch(cfg0.strict);
+        bindPunctSwitches(cfg0);
 
     }
 
@@ -266,9 +267,6 @@ public class LangOrderActivity extends AppCompatActivity {
 
     /** 标点三个开关（与 BZK 无关，任何时候都能用）。 */
     private void bindPunctSwitches(LangConfig cfg) {
-        bindBoolSwitch(smartSwitch, "smartPunct", cfg.smartPunct);
-        bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
-        bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
         bindBoolSwitch(smartSwitch, "smartPunct", cfg.smartPunct);
         bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
         bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
