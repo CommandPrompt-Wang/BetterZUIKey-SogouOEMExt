@@ -1,0 +1,74 @@
+name: Release APK
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+    - name: set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Setup signing
+      env:
+        SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+        SIGNING_PASS: ${{ secrets.SIGNING_PASS }}
+      run: |
+        echo "$SIGNING_KEYSTORE" | base64 -d > app-sign.keystore
+        cat > keystore.properties << EOF
+        storePassword=$SIGNING_PASS
+        keyPassword=$SIGNING_PASS
+        keyAlias=betterzuikey.sign
+        storeFile=app-sign.keystore
+        EOF
+
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug
+
+    - name: Upload APK to Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: app/build/outputs/apk/debug/BetterZUIKey-SougouOEMExt-v*.apk
+
+    - name: Mirror release to LSPosed module repo
+      env:
+        GH_TOKEN: ${{ secrets.LSPOSED_REPO_TOKEN }}
+        RELEASE_BODY: ${{ github.event.release.body }}
+        RELEASE_NAME: ${{ github.event.release.name }}
+      run: |
+        set -euo pipefail
+        if [ -z "${GH_TOKEN}" ]; then
+          echo "LSPOSED_REPO_TOKEN not configured; skipping LSPosed mirror."
+          exit 0
+        fi
+        VERCODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts)
+        VERNAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
+        TAG="${VERCODE}-${VERNAME// /_}"
+        REPO="Xposed-Modules-Repo/moe.lovefirefly.bzk.sougouext"
+        APK=$(ls app/build/outputs/apk/debug/BetterZUIKey-SougouOEMExt-v*.apk | head -n1)
+        NOTES_FILE="$(mktemp)"
+        printf '%s\n' "$RELEASE_BODY" > "$NOTES_FILE"
+
+        echo "Mirroring to ${REPO} tag=${TAG}"
+        if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+          gh release upload "$TAG" "$APK" --repo "$REPO" --clobber
+          gh release edit "$TAG" --repo "$REPO" --title "$RELEASE_NAME" --notes-file "$NOTES_FILE"
+        else
+          gh release create "$TAG" "$APK" \
+            --repo "$REPO" \
+            --title "$RELEASE_NAME" \
+            --notes-file "$NOTES_FILE"
+        fi

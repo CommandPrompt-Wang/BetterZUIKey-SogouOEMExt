@@ -1,0 +1,47 @@
+name: Nightly Build (dev)
+
+on:
+  push:
+    branches: [ "dev" ]
+
+jobs:
+  build:
+    # Only trigger when commit message starts with "[Nightly]"
+    if: startsWith(github.event.head_commit.message, '[Nightly]')
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: 'recursive'
+    - name: set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: gradle
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Setup signing
+      env:
+        SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+        SIGNING_PASS: ${{ secrets.SIGNING_PASS }}
+      run: |
+        echo "$SIGNING_KEYSTORE" | base64 -d > app-sign.keystore
+        cat > keystore.properties << EOF
+        storePassword=$SIGNING_PASS
+        keyPassword=$SIGNING_PASS
+        keyAlias=betterzuikey.sign
+        storeFile=app-sign.keystore
+        EOF
+
+    - name: Build with Gradle
+      run: ./gradlew assembleDebug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-debug-nightly
+        path: app/build/outputs/apk/debug/BetterZUIKey-SougouOEMExt-v*.apk

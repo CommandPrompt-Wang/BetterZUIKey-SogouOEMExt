@@ -1,4 +1,5 @@
 import java.util.Properties
+import com.android.build.api.variant.impl.VariantOutputImpl
 
 plugins {
     id("com.android.application")
@@ -47,6 +48,18 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+// AGP 9 removed VariantOutput.outputFileName from the public API; the internal
+// VariantOutputImpl is the workaround（与 BZK 一致）。
+androidComponents {
+    onVariants { variant ->
+        variant.outputs.forEach { output ->
+            (output as VariantOutputImpl).outputFileName.set(
+                "BetterZUIKey-SougouOEMExt-v${output.versionName.get()}.apk"
+            )
+        }
     }
 }
 
