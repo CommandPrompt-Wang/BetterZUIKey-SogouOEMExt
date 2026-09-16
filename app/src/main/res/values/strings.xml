@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Sogou OEM Bridge</string>
-    <string name="module_desc">Make Sogou OEM a first-class subtype IME</string>
+    <string name="app_name">搜狗输入法联想版增强</string>
+    <string name="module_desc">为联想版搜狗输入法补出中英 subtype，让框架接管语言切换</string>
 </resources>

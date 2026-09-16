@@ -6,7 +6,7 @@ final class InfoText {
     private InfoText() {}
 
     static String text() {
-        return "Sogou OEM Bridge\n" +
+        return "搜狗输入法联想版增强\n" +
             "\n" +
             "让搜狗 OEM 变成「框架 subtype 驱动」的输入法。\n" +
             "\n" +
