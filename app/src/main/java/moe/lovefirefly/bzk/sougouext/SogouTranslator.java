@@ -351,6 +351,7 @@ public final class SogouTranslator {
                                 if (down && kev.getRepeatCount() == 0) {
                                     sRuntimeFull = !currentFullWidth();
                                     Log.i(TAG, "hotkey Shift+Space -> fullwidth=" + sRuntimeFull);
+                                    banner("全角模式：" + (sRuntimeFull ? "开" : "关"));
                                 }
                                 return true;
                             }
@@ -359,6 +360,7 @@ public final class SogouTranslator {
                                 if (down && kev.getRepeatCount() == 0) {
                                     sRuntimeEn = !currentEnPunct();
                                     Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + sRuntimeEn);
+                                    banner("中英文标点：" + (sRuntimeEn ? "开（按键盘）" : "关（智能中文）"));
                                 }
                                 return true;
                             }
@@ -919,6 +921,81 @@ public final class SogouTranslator {
         } catch (Throwable ignored) {
         }
         return 0;
+    }
+
+    /**
+     * 快捷键切换后的状态提示。
+     *
+     * <p>不用 Toast：实测系统会拦（{@code NotificationService: Suppressing toast from package
+     * com.sohu.inputmethod.sogou.oem by user request} —— Android 11+ 起 Toast 跟随应用通知设置，
+     * 而搜狗的通知被关了）。改成在**输入法自己的窗口**里贴一条小横幅，1.2 秒后移除：
+     * 不依赖任何权限，也拦不掉。失败时退回 Toast。
+     */
+    private static void banner(final String text) {
+        final Object svc = sService;
+        if (svc == null) {
+            Log.w(TAG, "banner: no service");
+            return;
+        }
+        new Handler(Looper.getMainLooper()).post(() -> {
+            try {
+                if (!(svc instanceof android.inputmethodservice.InputMethodService)) {
+                    toast(text);
+                    return;
+                }
+                final android.inputmethodservice.InputMethodService ims =
+                        (android.inputmethodservice.InputMethodService) svc;
+                final android.app.Dialog dialog = ims.getWindow();
+                if (dialog == null || dialog.getWindow() == null) {
+                    toast(text);
+                    return;
+                }
+                final android.view.View decor = dialog.getWindow().getDecorView();
+                final float density = ims.getResources().getDisplayMetrics().density;
+                final int padH = (int) (14 * density);
+                final int padV = (int) (7 * density);
+
+                final android.widget.TextView tv = new android.widget.TextView(ims);
+                tv.setText(text);
+                tv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 13);
+                tv.setTextColor(0xFFFFFFFF);
+                tv.setBackgroundColor(0xCC202020);
+                tv.setPadding(padH, padV, padH, padV);
+
+                // 模仿系统 toast 的位置：贴底、水平居中，离屏幕底部约 12% 高度
+                final int screenH = ims.getResources().getDisplayMetrics().heightPixels;
+                final int y = (int) (screenH * 0.12f);
+
+                final android.widget.PopupWindow pw = new android.widget.PopupWindow(tv,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                        android.view.ViewGroup.LayoutParams.WRAP_CONTENT, false);
+                pw.setOutsideTouchable(false);
+                pw.setFocusable(false);
+                pw.showAtLocation(decor,
+                        android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL, 0, y);
+                Log.i(TAG, "banner: " + text + " (y=" + y + "/" + screenH + ")");
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    try {
+                        pw.dismiss();
+                    } catch (Throwable ignored) {
+                    }
+                }, 1200);
+            } catch (Throwable err) {
+                Log.w(TAG, "banner failed: " + err);
+                toast(text);
+            }
+        });
+    }
+
+    /** 兜底：系统通知没被关时用 Toast。 */
+    private static void toast(final String text) {
+        try {
+            final android.content.Context ctx = sCtx;
+            if (ctx == null) return;
+            android.widget.Toast.makeText(ctx, text, android.widget.Toast.LENGTH_SHORT).show();
+        } catch (Throwable err) {
+            Log.w(TAG, "toast failed: " + err);
+        }
     }
 
     /** 字段可能在父类上（SogouIME 是空壳，字段都在 coa），沿继承链找。 */

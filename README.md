@@ -188,7 +188,20 @@ CHINESE: ，。、、；：！？（）【】《》“‘＋－＊＝｛｝｜�
 
 **快捷键与状态**：Shift+Space / Ctrl+. 在这台 OEM 上**没有任何原生行为**（实测：无命令追踪、
 提交内容不变），所以由模块在按键层接管；切换出来的状态是**运行期内存态**（不落盘，
-UI 上的开关是持久默认值）。
+UI 上的开关是持久默认值）。切换后会弹一条状态提示。
+
+**为什么状态提示不是 Toast**：搜狗进程里 `Toast` 会被系统拦掉 ——
+
+```
+SogouOemBridge: toast: 全角模式：开
+NotificationService: Suppressing toast from package com.sohu.inputmethod.sogou.oem by user request.
+```
+
+`by user request` 来自应用的通知设置（`cmd appops get com.sohu.inputmethod.sogou.oem POST_NOTIFICATION`
+= `ignore`；BZK 那个包也是 `ignore`，但 **BZK 的 Toast 是 system_server 里弹的**，
+system uid 不受这条限制 —— 所以 BZK 能弹、搜狗进程里不能）。
+因此这里改成在**输入法自己的窗口**上贴一个 `PopupWindow` 横幅：
+贴底居中、离底约屏幕高 12%（和系统 toast 同位置），1.2 秒后消失，**不依赖任何权限**。
 
 **实现位置**：`android.inputmethodservice.RemoteInputConnection#commitText/setComposingText`
 （IME 进程内，可用 libxposed 的 `Chain.proceed(Object[])` 替换参数）；按键在
