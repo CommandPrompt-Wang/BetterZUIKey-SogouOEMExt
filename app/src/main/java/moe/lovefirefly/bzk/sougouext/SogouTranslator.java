@@ -96,6 +96,8 @@ public final class SogouTranslator {
     /** 推 marker 期间屏蔽自己的语言动作（marker 动了但语言不该跟着动）。 */
     private static volatile boolean sSuppress;
 
+    private static volatile boolean sKeyGuardsInstalled;
+
     /** marker 推进单飞：setInputView 与 onStartInputView 会各触发一次，避免两个线程互抢。 */
     private static volatile boolean sRepositioning;
 
@@ -157,6 +159,8 @@ public final class SogouTranslator {
                             sService = chain.getThisObject();
                             Log.i(TAG, "service captured: " + sService.getClass().getName());
                             bindCommandRegistry();
+                            installKeyGuards();
+                            startConfigWatch();
                         }
                         sViewReady = true;
                         sReadyAt = SystemClock.uptimeMillis();
@@ -194,6 +198,75 @@ public final class SogouTranslator {
         }
     }
 
+    /**
+     * 吞掉搜狗原生的"切语言"组合键（Ctrl+Space / Ctrl+Shift）。
+     *
+     * <p>为什么必须做到按键这一层：实测搜狗的 Ctrl+Space **不走** `cta/dta` 命令
+     * （既没有 eP.a(int) 追踪行，也没有命令级守卫的 blocked 行）——它在内部直接切语言
+     * 并回写 subtype。命令级守卫拦不到，只能在这里吞键。
+     *
+     * <p>不影响 BZK：BZK 是 system_server 里的 input filter，先于 IME 拿到事件，
+     * 它照旧按框架 subtype 切换；我们只是让搜狗**看不到**这两个组合键。
+     */
+    private static void installKeyGuards() {
+        final Object svc = sService;
+        final XposedModule module = sModule;
+        if (svc == null || module == null) return;
+        if (sKeyGuardsInstalled) return;
+        sKeyGuardsInstalled = true;
+        final java.util.Set<Method> hooked = new java.util.HashSet<>();
+        for (Class<?> c = svc.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+            for (Method m : c.getDeclaredMethods()) {
+                final String n = m.getName();
+                if (!n.equals("onKeyDown") && !n.equals("onKeyUp")) continue;
+                if (m.getParameterCount() != 2 || m.getReturnType() != boolean.class) continue;
+                m.setAccessible(true);
+                if (!hooked.add(m)) continue;
+                try {
+                    module.hook(m).intercept(chain -> {
+                        if (!sStrict) return chain.proceed();
+                        final Object kcArg = chain.getArg(0);
+                        final Object evArg = chain.getArg(1);
+                        if (!(kcArg instanceof Integer) || !(evArg instanceof KeyEvent)) {
+                            return chain.proceed();
+                        }
+                        final int kc = (Integer) kcArg;
+                        final int meta = ((KeyEvent) evArg).getMetaState();
+                        final boolean ctrl = (meta & KeyEvent.META_CTRL_ON) != 0;
+                        if (ctrl && (kc == KeyEvent.KEYCODE_SPACE
+                                || kc == KeyEvent.KEYCODE_SHIFT_LEFT
+                                || kc == KeyEvent.KEYCODE_SHIFT_RIGHT)) {
+                            Log.i(TAG, "strict: blocked native switch key "
+                                    + KeyEvent.keyCodeToString(kc));
+                            return true;             // 吞掉，不给搜狗处理
+                        }
+                        return chain.proceed();
+                    });
+                    Log.i(TAG, "strict key guard on " + c.getSimpleName() + "#" + n);
+                } catch (Throwable err) {
+                    Log.w(TAG, "key guard failed: " + err);
+                }
+            }
+        }
+    }
+
+    /**
+     * 定时轮询配置（2 秒）。
+     *
+     * <p>界面上的开关/顺序改完，最多 2 秒就生效，不用等下一次输入会话、也不用重启进程。
+     * 签名没变时 {@link #reloadConfig()} 什么都不做，开销可以忽略。
+     */
+    private static void startConfigWatch() {
+        final Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                reloadConfig();
+                handler.postDelayed(this, 2000);
+            }
+        }, 2000);
+        Log.i(TAG, "config watch started (2s)");
+    }
+
     /** 读（并应用）语言顺序配置；注入是幂等的，只有变化时才真的写 IMMS。 */
     private static void reloadConfig() {
         final XposedModule m = sModule;
@@ -201,9 +274,12 @@ public final class SogouTranslator {
         final LangConfig cfg = LangConfig.load(m);
         final boolean changed = sConfig == null || !cfg.signature().equals(sConfig.signature());
         sConfig = cfg;
-        if (changed && sCtx != null && sPkg != null) {
-            Log.i(TAG, "config -> " + cfg.signature() + " | "
-                    + SubtypeInjector.apply(sCtx, sPkg, cfg));
+        if (changed) {
+            if (sCtx != null && sPkg != null) {
+                Log.i(TAG, "config -> " + cfg.signature() + " | "
+                        + SubtypeInjector.apply(sCtx, sPkg, cfg));
+            }
+            syncMarker();
         }
     }
 

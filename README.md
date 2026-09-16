@@ -24,9 +24,13 @@
 - **第二屏 = 原理 / 说明**（`InfoActivity`，exported=false）：顶部 `← 返回` 按钮 + 正文；
 - 两个界面都自己补系统栏 inset（Android 15+ 强制 edge-to-edge，否则内容会被状态栏压住）。
 
-配置写进 libxposed 的 **remote preferences**（`sogou_lang` 组），模块在**每次输入会话开始**
-（`onStartInputView`/`onStartInput`）和键盘视图创建（`setInputView`）时读取并应用 ——
-所以改完设置**弹一次键盘就生效，不需要重启进程**。
+配置写进 libxposed 的 **remote preferences**（`sogou_lang` 组）。模块读配置有三条途径：
+
+1. 键盘视图创建（`setInputView`）；
+2. 每次输入会话开始（`onStartInputView` / `onStartInput`）；
+3. **每 2 秒轮询一次**（签名没变就什么都不做）—— 这条是必需的：实测前两条并不总会触发，
+   导致开关改了却"没生效"。所以现在**改完设置最多 2 秒生效，不需要重启进程**。
+   界面在 Xposed 服务未连接时会明确 Toast 提示"改动未保存"，不再静默失败。
 
 ## 1. 三种语言与它们的内部命令
 
@@ -110,7 +114,9 @@ if (!belongsTo) return currentMap;      // 静默 no-op
 - 模块侧守卫**常驻安装**，但每次调用都读一次开关 —— 所以改完开关**下次弹键盘就生效**，
   不需要重启搜狗进程。
 
-打开时，给中↔英命令 `cta(-2)` / `dta(-6)` 的执行口 `hP.a(WO, Bundle)` 生效，
+打开时是**两层拦截**：
+
+**第一层 · 命令级**：给中↔英命令 `cta(-2)` / `dta(-6)` 的执行口 `hP.a(WO, Bundle)` 装守卫，
 **按"调用来源"而不是按按键**判定：
 
 | 调用来源 | Bundle | 处理 |
@@ -133,7 +139,23 @@ sogou requested command -2 / bundle={keyboardEventId=1005}  ← 方案键→五�
 实测 150ms 间隔的连按也能一一对应。
 
 ⚠️ **不要顺手把 `kwa(1002)` / `hwa(1007)` 也拦掉**：它们是软键盘中/英键那条路（`Bundle=null`），
-但实测拦截后**软键盘直接弹不出来**（键盘显示也走这条命令）。所以守卫只覆盖 `cta/dta`。
+但实测拦截后**软键盘直接弹不出来**（键盘显示也走这条命令）。所以命令级守卫只覆盖 `cta/dta`。
+
+**第二层 · 按键级**（必需）：实测搜狗的 **Ctrl+Space 根本不走 `cta/dta`** —— 既没有
+`eP.a(int)` 追踪行、也没有命令级守卫的 blocked 行；它在内部直接切语言并回写 subtype，
+命令级守卫看不见。所以在输入法的按键入口
+（`coa#onKeyDown/onKeyUp` 与 `InputMethodService#onKeyDown/onKeyUp`）把
+**Ctrl+Space / Ctrl+Shift** 直接吞掉：
+
+```
+strict: blocked native switch key KEYCODE_SPACE
+strict: blocked native switch key KEYCODE_SHIFT_LEFT
+```
+
+- 不影响 BZK：它是 system_server 里的 input filter，**先于 IME** 拿到事件，照旧按 subtype 切换；
+  我们只是让搜狗看不到这两个组合键（否则就是"一次按键切两次"）；
+- 不误伤打字：判定条件是 `metaState` 带 `META_CTRL_ON`，所以 **Shift+字母 大写** 不受影响，
+  普通空格也不受影响。
 
 ## 4. BZK 侧（另一侧的配合）
 

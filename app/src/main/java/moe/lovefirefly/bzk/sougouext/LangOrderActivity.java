@@ -39,6 +39,8 @@ import io.github.libxposed.service.XposedServiceHelper;
  */
 public class LangOrderActivity extends AppCompatActivity {
 
+    private static final String TAG = "SogouOemBridge";
+
     private static final int TYPE_LANG = 0;
     private static final int TYPE_DIVIDER = 1;
 
@@ -131,6 +133,7 @@ public class LangOrderActivity extends AppCompatActivity {
         XposedServiceHelper.registerListener(new XposedServiceHelper.OnServiceListener() {
             @Override public void onServiceBind(XposedService service) {
                 prefs = service.getRemotePreferences(LangConfig.GROUP);
+                android.util.Log.i(TAG, "UI: xposed service bound, remote prefs ready");
                 runOnUiThread(() -> {
                     final LangConfig cfg = LangConfig.parse(
                             prefs.getString("order", LangSpec.DEFAULT_ORDER),
@@ -142,6 +145,7 @@ public class LangOrderActivity extends AppCompatActivity {
 
             @Override public void onServiceDied(XposedService service) {
                 prefs = null;
+                android.util.Log.w(TAG, "UI: xposed service died, remote prefs unavailable");
             }
         });
     }
@@ -163,10 +167,16 @@ public class LangOrderActivity extends AppCompatActivity {
         strictSwitch.setOnCheckedChangeListener(null);
         strictSwitch.setChecked(checked && bzk);
         strictSwitch.setOnCheckedChangeListener((v, isChecked) -> {
-            if (prefs != null) {
-                prefs.edit().putBoolean("strict", isChecked).apply();
-                Toast.makeText(this, "已保存（下次弹出键盘生效）", Toast.LENGTH_SHORT).show();
+            if (prefs == null) {
+                // 服务还没绑上：必须明说，否则用户以为存了
+                android.util.Log.w(TAG, "UI: strict toggle ignored, xposed service not bound");
+                Toast.makeText(this, "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
+                        Toast.LENGTH_LONG).show();
+                return;
             }
+            prefs.edit().putBoolean("strict", isChecked).apply();
+            android.util.Log.i(TAG, "UI: strict saved = " + isChecked);
+            Toast.makeText(this, "已保存（下次弹出键盘生效）", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -221,6 +231,12 @@ public class LangOrderActivity extends AppCompatActivity {
     }
 
     private void save() {
+        if (prefs == null) {
+            android.util.Log.w(TAG, "UI: order save ignored, xposed service not bound");
+            Toast.makeText(this, "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
         final List<String> order = new ArrayList<>();
         int divider = 0;
         boolean seenDivider = false;
