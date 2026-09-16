@@ -7,6 +7,8 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.net.Uri;
+import android.os.Binder;
+import android.os.Process;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -22,6 +24,10 @@ import androidx.annotation.Nullable;
  */
 public class ConfigProvider extends ContentProvider {
 
+    private static final String TAG = "SogouOemBridge";
+    private static final String SELF_PKG = "moe.lovefirefly.bzk.sougouext";
+    private static final String SOGOU_PKG = "com.sohu.inputmethod.sogou.oem";
+
     public static final String AUTHORITY = "moe.lovefirefly.bzk.sougouext.config";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/config");
     public static final String COLUMN = "config";
@@ -35,6 +41,10 @@ public class ConfigProvider extends ContentProvider {
     @Override
     public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection,
             @Nullable String[] selectionArgs, @Nullable String sortOrder) {
+        if (!isCallerAllowed()) {
+            android.util.Log.w(TAG, "provider: reject uid=" + Binder.getCallingUid());
+            return new MatrixCursor(new String[]{COLUMN});
+        }
         final SharedPreferences sp = getContext()
                 .getSharedPreferences(LangConfig.PREFS_NAME, Context.MODE_PRIVATE);
         final MatrixCursor c = new MatrixCursor(new String[]{COLUMN});
@@ -42,6 +52,19 @@ public class ConfigProvider extends ContentProvider {
         android.util.Log.i("SogouOemBridge", "provider: dump self-check = "
                 + LangConfig.dumpRoundTripCheck(sp));
         return c;
+    }
+
+    private boolean isCallerAllowed() {
+        final int uid = Binder.getCallingUid();
+        if (uid == Process.myUid()) return true;
+        final Context ctx = getContext();
+        if (ctx == null) return false;
+        final String[] pkgs = ctx.getPackageManager().getPackagesForUid(uid);
+        if (pkgs == null) return false;
+        for (String p : pkgs) {
+            if (SELF_PKG.equals(p) || SOGOU_PKG.equals(p)) return true;
+        }
+        return false;
     }
 
     @Nullable
