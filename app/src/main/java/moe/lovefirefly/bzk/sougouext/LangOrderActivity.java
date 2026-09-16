@@ -146,8 +146,7 @@ public class LangOrderActivity extends AppCompatActivity {
         slashHint.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodySmall);
         slashHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
-        slashHint.setText("搜狗把 / 和 \\ 都输出成 、。选 / 或 \\ 就原样输出该斜杠"
-                + "（全角模式下仍会变 ／ 或 ＼）。");
+        slashHint.setText("搜狗把 / 和 \\ 都输出成 、。在此选择想原样保留的字符。");
 
         final LinearLayout slashRow = new LinearLayout(this);
         slashRow.setOrientation(LinearLayout.HORIZONTAL);
@@ -161,13 +160,11 @@ public class LangOrderActivity extends AppCompatActivity {
         // 三个功能开关（默认全开）。注意：它们只决定"这个功能是否启用"，
         // 具体当前是中文/英文标点、全角/半角属于"状态位"，由快捷键切换并持久化，不在界面显示。
         smartSwitch = addSwitch(strictBox, "智能中文标点",
-                "功能开关。启用后中文态使用中文标点映射（+ - # 等仍按半角处理）；"
-                + "当前是中文还是英文标点见下方快捷键说明");
+                "使用更合理的中文标点映射（+ - # 等按半角处理）");
         fullSwitch = addSwitch(strictBox, "全角模式",
-                "功能开关。启用后可用 Shift+Space 在全角/半角之间切换（状态自动记忆）");
+                "在全角/半角之间切换。快捷键：Shift+Space");
         enSwitch = addSwitch(strictBox, "中英文标点",
-                "功能开关。启用后可用 Ctrl+. 在中文标点/英文标点之间切换（状态自动记忆）；"
-                + "英文输入状态下标点恒为英文");
+                "允许中文模式下在中英标点之间切换；英文输入状态下标点恒为英文。快捷键：Ctrl+.");
 
         final TextView hotkeyHint = new TextView(this);
         hotkeyHint.setTextAppearance(com.google.android.material.R.style
