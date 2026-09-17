@@ -48,11 +48,26 @@ final class LangConfig {
     /**
      * 「填入建议项」用的建议配对串。
      *
-     * <p>共 18 对：半角 / 全角、中英引号、中文括号各自成对。它同时是编辑窗口的
+     * <p>共 18 对：半角 / 全角、中文括号、中英引号各一行。它同时是编辑窗口的
      * hint、初始值，以及「填入建议项」填入的内容（完整串见 README 3.8）。
+     *
+     * <p><b>串里带换行是故意的</b>：编辑窗口是多行框，分行只是给人看的分组。
+     * 存储与 dump 都原样保留换行，真正解析成配对表前会先过一遍 {@link #cleanTable}。
      */
     static final String SUGGEST_PAIR_TABLE =
-            "()[]{}（）【】《》\"\"''“”‘’〈〉「」『』〖〗〔〕［］｛｝＜＞";
+            "()[]{}（）［］｛｝＜＞\n"
+            + "【】《》〈〉「」『』〖〗〔〕\n"
+            + "\"\"''“”‘’";
+
+    /**
+     * 去掉配对串里的换行（分组用），**解析、签名、UI 校验三处共用同一个清洗**，
+     * 免得出现"UI 按清洗后的长度校验、解析却按原始串切两字符"这种错位。
+     *
+     * <p>只去 {@code \r\n}，不去空格：空格有可能会是用户真想配对的字符。
+     */
+    static String cleanTable(String raw) {
+        return raw == null ? "" : raw.replace("\r", "").replace("\n", "");
+    }
 
     final List<String> order;
     final int divider;
@@ -114,8 +129,9 @@ final class LangConfig {
         // 每 2 个字符一组：前 = 开字符（key），后 = 闭字符（value）。
         // 只有开字符会成为 key，方向性由此天然保证；末尾落单字符忽略；
         // 重复的开字符按"首次出现生效"（putIfAbsent），与旧的扫描行为一致。
+        // 先清洗：表里允许用换行分组（见 SUGGEST_PAIR_TABLE），换行不能占配对位。
         final java.util.Map<Character, Character> m = new java.util.LinkedHashMap<>();
-        final String t = this.autoPairTable;
+        final String t = cleanTable(this.autoPairTable);
         for (int i = 0; i + 1 < t.length(); i += 2) {
             m.putIfAbsent(t.charAt(i), t.charAt(i + 1));
         }
@@ -272,8 +288,30 @@ final class LangConfig {
         final LangConfig a = load(sp);
         final LangConfig b = parseDump(dump(sp));
         if (b == null) return "parseDump returned null";
-        return a.signature().equals(b.signature()) ? "ok"
-                : "MISMATCH\n  stored: " + a.signature() + "\n  dumped: " + b.signature();
+        if (!a.signature().equals(b.signature())) {
+            return "MISMATCH\n  stored: " + a.signature() + "\n  dumped: " + b.signature();
+        }
+        // 再单独查一遍配对表：签名比对**看不出**"构造时忘了清洗换行"这类 bug，
+        // 因为签名本身就是拿清洗后的串拼的。只有真去比 map 才拦得住。
+        final java.util.Map<Character, Character> expect = new java.util.LinkedHashMap<>();
+        final String t = cleanTable(a.autoPairTable);
+        for (int i = 0; i + 1 < t.length(); i += 2) {
+            expect.putIfAbsent(t.charAt(i), t.charAt(i + 1));
+        }
+        if (!expect.equals(a.pairMap)) {
+            return "PAIRMAP MISMATCH\n  expect: " + describe(expect)
+                    + "\n  actual: " + describe(a.pairMap);
+        }
+        return "ok (pairMap=" + a.pairMap.size() + " pairs)";
+    }
+
+    /** 自检日志用：把配对表写成 {@code ()[]} 这样的紧凑串。 */
+    private static String describe(java.util.Map<Character, Character> m) {
+        final StringBuilder sb = new StringBuilder();
+        for (java.util.Map.Entry<Character, Character> e : m.entrySet()) {
+            sb.append(e.getKey()).append(e.getValue());
+        }
+        return sb.toString();
     }
 
     static LangConfig defaults() {
@@ -365,8 +403,9 @@ final class LangConfig {
                 + "|cap=" + capitalInPinyin
                 + "|pair=" + autoPair
                 + "|phys=" + physComplete
-                // 表内容进签名，改表才能触发热重载
-                + "|pairtbl=" + autoPairTable;
+                // 表内容进签名，改表才能触发热重载；用清洗后的形式，
+                // 这样只改分组换行（配对结果不变）不会白热重载一次，日志也仍是单行
+                + "|pairtbl=" + cleanTable(autoPairTable);
     }
 
     static List<String> defaultOrder() {

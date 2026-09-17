@@ -309,16 +309,17 @@ public class LangOrderActivity extends AppCompatActivity {
                 .TextAppearance_Material3_BodySmall);
         desc.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
 
-        // 输入框：hint 与默认值都用建议串。
-        // 建议串有 36 个字符，单行会被截断 → 用会自动换行的多行框；
-        // 多行框按回车能插换行，所以在"读文字"这一步统一去掉换行符再去校验对数。
+        // 输入框：hint 与默认值都用建议串（建议串本身按分组带换行，正好多行显示）。
+        // 多行框按回车能插换行，而且换行本身就是分组手段 → **原样存储**，
+        // 只在"校验"和"解析"时过 LangConfig.cleanTable 去掉换行再数配对。
         final android.widget.EditText input = new android.widget.EditText(this);
         input.setHint(LangConfig.SUGGEST_PAIR_TABLE);
         input.setSingleLine(false);
-        input.setMinLines(2);
-        input.setMaxLines(4);
+        input.setMinLines(3);
+        input.setMaxLines(6);
         input.setHorizontallyScrolling(false);
-        input.setText(noNewlines(prefs.getString("autoPairTable", LangConfig.SUGGEST_PAIR_TABLE)));
+        // 原样回填：用户自己排的分组要留着
+        input.setText(prefs.getString("autoPairTable", LangConfig.SUGGEST_PAIR_TABLE));
         input.setSelection(input.getText().length());
 
         // 「填入建议项」：左对齐，放在输入框下方（对话框底部按钮区由 取消/保存 占用）
@@ -349,23 +350,19 @@ public class LangOrderActivity extends AppCompatActivity {
 
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
-                    final String value = noNewlines(input.getText().toString()).trim();
-                    if (value.length() % 2 != 0) {
+                    // 校验用清洗后的串（去掉分组换行），存储存原样
+                    final String raw = input.getText().toString().trim();
+                    if (LangConfig.cleanTable(raw).length() % 2 != 0) {
                         Toast.makeText(this, R.string.autopair_odd_error,
                                 Toast.LENGTH_SHORT).show();
                         return;                                  // 奇数不保存
                     }
-                    prefs.edit().putString("autoPairTable", value).apply();
+                    prefs.edit().putString("autoPairTable", raw).apply();
                     Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
                     dialog.dismiss();
                 }));
 
         dialog.show();
-    }
-
-    /** 配对表文本框允许自动换行，回填与保存都去掉 {@code \r\n}（配对串本身不含换行）。 */
-    private static String noNewlines(String s) {
-        return s == null ? "" : s.replace("\r", "").replace("\n", "");
     }
 
     private void bindPunctSwitches(LangConfig cfg) {
