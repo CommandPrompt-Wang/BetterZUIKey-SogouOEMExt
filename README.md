@@ -1,13 +1,13 @@
 <div align="center">
 
 <h1>搜狗输入法联想版增强</h1>
-<img src="img/icon.png" width="120" alt="BetterZUIKey-SogouOEMExt">
+<img src="https://raw.githubusercontent.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/main/img/icon.png" width="120" alt="BetterZUIKey-SogouOEMExt">
 <p></p>
 <p>
    简体中文
 </p>
 
-[![Android](https://img.shields.io/badge/API-27%2B-green)](https://developer.android.com/about/versions/8.1) [![Xposed](https://img.shields.io/badge/Xposed-LSPosed-blue)](https://github.com/LSPosed/LSPosed) [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/projects/jdk/17/) [![License](https://img.shields.io/badge/License-GPL--3.0-orange)](LICENSE)
+[![Android](https://img.shields.io/badge/API-27%2B-green)](https://developer.android.com/about/versions/8.1) [![Xposed](https://img.shields.io/badge/Xposed-LSPosed-blue)](https://github.com/LSPosed/LSPosed) [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/projects/jdk/17/) [![License](https://img.shields.io/badge/License-GPL--3.0-orange)](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/blob/main/LICENSE)
 
 <p>把联想 OEM 版搜狗输入法的增强模块</p>
 
@@ -82,7 +82,7 @@
 - 中文引号由 `KG.d` 决定，每按一次就翻转 `KG.e`/`KG.f`。模块一次上屏两个字符，就得多替它翻一格，否则下一次按键只吐出一个 `”`
 - subtype 顺序 = 框架 enabled subtype 列表顺序
 - 若由于版本更新导致内部符号变化则退回合成 Shift / 走默认表，避免造成崩溃
-- dex 级逆向、踩坑与实测数据全部整理在 **[PRINCIPLE.md](PRINCIPLE.md)**
+- dex 级逆向、踩坑与实测数据全部整理在 **[PRINCIPLE.md](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/blob/main/PRINCIPLE.md)**
 
 ## 模块安装
 
