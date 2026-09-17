@@ -12,6 +12,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.ItemTouchHelper;
@@ -64,6 +65,9 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch enSwitch;
     private MaterialSwitch numSwitch;
     private MaterialSwitch capSwitch;
+    private MaterialSwitch autoPairSwitch;
+    private MaterialSwitch physPairSwitch;
+    private TextView editPairTableRow;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
     private SharedPreferences prefs;
@@ -183,6 +187,27 @@ public class LangOrderActivity extends AppCompatActivity {
                 "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
                 + "只作用于紧跟数字的那一下，后续字符照常");
 
+        // S：软键盘补全（搜狗原生行为，模块只做开关）
+        autoPairSwitch = addSwitch(strictBox, "引号/括号自动关闭",
+                "软键盘：关闭后打引号、括号不再自动补另一半（只出单个字符）。");
+
+        // 9：物理键盘补全（模块自己注入）—— 与 S 各自独立，共用同一份匹配列表
+        physPairSwitch = addSwitch(strictBox, "物理键盘自动补全",
+                "物理键盘：打引号、括号时自动补上另一半并把光标移到中间。\n"
+                + "快捷键 Ctrl+Shift+9 可临时开关。");
+
+        // 匹配列表编辑入口：两个开关共用，独立成条目
+        editPairTableRow = new TextView(this);
+        editPairTableRow.setText(R.string.edit_pair_table);
+        editPairTableRow.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyLarge);
+        editPairTableRow.setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary));
+        editPairTableRow.setPadding(pad / 2, pad / 2, pad / 2, pad / 2);
+        editPairTableRow.setClickable(true);
+        editPairTableRow.setFocusable(true);
+        editPairTableRow.setOnClickListener(v -> showAutoPairDialog());
+        strictBox.addView(editPairTableRow);
+
         final ExtendedFloatingActionButton fab = new ExtendedFloatingActionButton(this);
         fab.setText("原理 / 说明");
         fab.setOnClickListener(v -> startActivity(
@@ -268,12 +293,80 @@ public class LangOrderActivity extends AppCompatActivity {
     }
 
     /** 标点三个开关（与 BZK 无关，任何时候都能用）。 */
+    /**
+     * 长按「引号/括号自动关闭」→ 编辑自定义配对串。
+     *
+     * <p>串是若干「前-后」配对依次排列（相邻两字符为一组），所以长度必须为偶数。
+     * 留空表示使用输入法默认匹配规则（此时模块不介入，完全走搜狗自己的表）。
+     */
+    private void showAutoPairDialog() {
+        final int dp = (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, 1,
+                getResources().getDisplayMetrics());
+
+        // 说明
+        final TextView desc = new TextView(this);
+        desc.setText(R.string.autopair_desc);
+        desc.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        desc.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+
+        // 输入框：hint 与默认值都用建议串
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setHint(LangConfig.SUGGEST_PAIR_TABLE);
+        input.setSingleLine(true);
+        input.setText(prefs.getString("autoPairTable", LangConfig.SUGGEST_PAIR_TABLE));
+        input.setSelection(input.getText().length());
+
+        // 「填入建议项」：左对齐，放在输入框下方（对话框底部按钮区由 取消/保存 占用）
+        final TextView suggest = new TextView(this);
+        suggest.setText(R.string.autopair_suggest);
+        suggest.setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary));
+        suggest.setPadding(0, dp * 10, 0, 0);
+        suggest.setClickable(true);
+        suggest.setFocusable(true);
+        suggest.setOnClickListener(v -> {
+            input.setText(LangConfig.SUGGEST_PAIR_TABLE);
+            input.setSelection(input.getText().length());
+        });
+
+        final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp * 24, dp * 4, dp * 24, 0);
+        box.addView(desc);
+        box.addView(input);
+        box.addView(suggest);
+
+        final AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle(R.string.autopair_title)
+                .setView(box)
+                .setPositiveButton(android.R.string.ok, null)   // 占位，校验逻辑在 onShow 里接
+                .setNegativeButton(android.R.string.cancel, null)
+                .create();
+
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(v -> {
+                    final String value = input.getText().toString().trim();
+                    if (value.length() % 2 != 0) {
+                        Toast.makeText(this, R.string.autopair_odd_error,
+                                Toast.LENGTH_SHORT).show();
+                        return;                                  // 奇数不保存
+                    }
+                    prefs.edit().putString("autoPairTable", value).apply();
+                    Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
+                    dialog.dismiss();
+                }));
+
+        dialog.show();
+    }
+
     private void bindPunctSwitches(LangConfig cfg) {
         bindBoolSwitch(smartSwitch, "smartPunct", cfg.smartPunct);
         bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
         bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
         bindBoolSwitch(numSwitch, "smartNumbering", cfg.smartNumbering);
         bindBoolSwitch(capSwitch, "capitalInPinyin", cfg.capitalInPinyin);
+        bindBoolSwitch(autoPairSwitch, "autoPair", cfg.autoPair);
+        bindBoolSwitch(physPairSwitch, "physComplete", cfg.physComplete);
         bindSlashSpinner(cfg.slashMode);
     }
 

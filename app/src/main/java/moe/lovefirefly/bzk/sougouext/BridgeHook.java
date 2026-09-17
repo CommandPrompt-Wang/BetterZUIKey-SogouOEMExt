@@ -41,6 +41,9 @@ public class BridgeHook extends XposedModule {
     /** 开发期：打印每个物理按键（定位 Shift+Space / Ctrl+. 走哪条路）。 */
     static final boolean DEV_KEY_LOG = false;
 
+    /** 开发期：记录引号/括号自动配对的拦截命中（功能 S）。 */
+    static final boolean DEV_AUTOPAIR_LOG = false;
+
     /** 开发期：抓全角标点在哪儿产生（sendKeyChar / InputConnection）。 */
     static final boolean DEV_PUNCT_PROBE = false;
 

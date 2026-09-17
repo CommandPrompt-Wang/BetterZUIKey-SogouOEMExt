@@ -75,6 +75,19 @@ public final class SogouTranslator {
      */
     private static volatile boolean sStrict;
 
+    /** 功能 S：引号/括号自动关闭（默认开）。hook 可能在任何线程被调用，故单独存字段。 */
+    private static volatile boolean sAutoPair = true;
+
+    /** 功能 S/9 共用的配对表：开字符 → 闭字符（空表 = 用输入法默认匹配规则）。 */
+    private static volatile java.util.Map<Character, Character> sPairMap =
+            java.util.Collections.emptyMap();
+
+    /** 功能 9：物理键盘自动补全的功能开关（UI）。 */
+    private static volatile boolean sPhysComplete = true;
+
+    /** 功能 9 的状态位（由 Ctrl+Shift+9 临时切换并持久化）。 */
+    private static volatile Boolean sPhysState;
+
     /** 标记"这次语言命令是本模块发起的"，守卫据此放行。 */
     private static final ThreadLocal<Boolean> sOurs = new ThreadLocal<Boolean>() {
         @Override protected Boolean initialValue() { return Boolean.FALSE; }
@@ -278,6 +291,32 @@ public final class SogouTranslator {
         sStrict = strict;
     }
 
+    /** 功能 S 的开关（{@link AutoPairHook} 读）。 */
+    static boolean autoPairEnabled() {
+        return sAutoPair;
+    }
+
+    /** 功能 S/9 的配对表（{@link AutoPairHook} 读）。 */
+    static java.util.Map<Character, Character> autoPairMap() {
+        return sPairMap;
+    }
+
+    /**
+     * 功能 9 当前是否生效 = 功能开关开 && 状态位为真。
+     *
+     * <p>状态位不在 UI 上，由 Ctrl+Shift+9 临时切换并持久化，与全角/中英标点同一套机制。
+     */
+    static boolean physCompleteActive() {
+        if (!sPhysComplete) return false;          // 功能开关关 → 忽略状态位
+        Boolean v = sPhysState;
+        if (v == null) {
+            final android.content.SharedPreferences sp = statePrefs();
+            v = sp == null || sp.getBoolean("physComplete", true);   // 默认开：开箱即用
+            sPhysState = v;
+        }
+        return v;
+    }
+
     /** 开发期：记录搜狗自己请求的命令 id。 */
     public static void setCommandTrace(boolean trace) {
         sCommandTrace = trace;
@@ -377,6 +416,9 @@ public final class SogouTranslator {
                             if (cfg == null) return chain.proceed();
                             final Object a0 = chain.getArg(0);
                             if (!(a0 instanceof CharSequence)) return chain.proceed();
+                            // 我们自己注入的提交（物理补全的闭字符）原样放行，
+                            // 不让标点管线改写它 —— 否则补出来的字符会被二次变换
+                            if (AutoPairHook.isInjecting()) return chain.proceed();
                             final String src = a0.toString();
                             final boolean commit = n.equals("commitText");
                             if (BridgeHook.DEV_KEY_LOG) {
@@ -434,15 +476,24 @@ public final class SogouTranslator {
                             if (w != null) out = w;
                             sLastCommittedChar = out.isEmpty() ? 0
                                     : out.charAt(out.length() - 1);
-                            if (out.equals(src)) return chain.proceed();
-                            final Object[] args = chain.getArgs().toArray();
-                            args[0] = out;
-                            Log.i(TAG, "punct: " + src + " -> " + out
-                                    + (full ? " [full]" : " [half]")
-                                    + (slashHandled ? " [slash=" + cfg.slashMode + "]"
-                                       : currentEnPunct() || english ? " [en]"
-                                       : cfg.smartPunct ? " [cn]" : " [raw]"));
-                            return chain.proceed(args);
+                            final Object result;
+                            if (out.equals(src)) {
+                                result = chain.proceed();
+                            } else {
+                                final Object[] args = chain.getArgs().toArray();
+                                args[0] = out;
+                                Log.i(TAG, "punct: " + src + " -> " + out
+                                        + (full ? " [full]" : " [half]")
+                                        + (slashHandled ? " [slash=" + cfg.slashMode + "]"
+                                           : currentEnPunct() || english ? " [en]"
+                                           : cfg.smartPunct ? " [cn]" : " [raw]"));
+                                result = chain.proceed(args);
+                            }
+                            // 物理键盘补全：开字符上屏后，紧接着注入闭字符（功能 9）
+                            if (commit) {
+                                AutoPairHook.maybeInjectPair(chain.getThisObject(), out);
+                            }
+                            return result;
                         });
                         Log.i(TAG, "punct hooked " + c.getSimpleName() + "#" + n);
                     } catch (Throwable ignored) {
@@ -470,6 +521,9 @@ public final class SogouTranslator {
         if (svc == null || module == null) return;
         if (sKeyGuardsInstalled) return;
         sKeyGuardsInstalled = true;
+        // 引擎类（LUU / Yja）要等搜狗自己开始输入才加载完，且只有输入法服务自己的
+        // ClassLoader 看得到，所以在这里懒安装。装不上也不影响其它功能。
+        AutoPairHook.install(module, svc.getClass().getClassLoader());
         final java.util.Set<Method> hooked = new java.util.HashSet<>();
         for (Class<?> c = svc.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
             for (Method m : c.getDeclaredMethods()) {
@@ -491,6 +545,9 @@ public final class SogouTranslator {
                             }
                         }
                         final boolean down = n.equals("onKeyDown");
+                        // 标记"正在处理硬件按键"：软键盘不走这两个 hook，所以它能把
+                        // 物理键盘的提交与软键盘的提交区分开（物理补全只认前者）
+                        AutoPairHook.markHardwareKey(down);
                         if (chain.getArg(1) instanceof KeyEvent) {
                             final KeyEvent kev = (KeyEvent) chain.getArg(1);
                             final int u = kev.getUnicodeChar();
@@ -550,6 +607,18 @@ public final class SogouTranslator {
                                     if (sp != null) sp.edit().putBoolean(KEY_MODE_EN, nv).apply();
                                     Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + nv + " (saved)");
                                     banner("标点模式：" + (nv ? "英文标点" : "中文标点"));
+                                }
+                                return true;
+                            }
+                            // Ctrl+Shift+9 → 物理键盘补全的状态位（功能开关 9 之下的临时开关）
+                            if (kc2 == KeyEvent.KEYCODE_9 && ctrl && shift) {
+                                if (down && kev.getRepeatCount() == 0) {
+                                    final boolean nv = !physCompleteActive();
+                                    sPhysState = nv;
+                                    final android.content.SharedPreferences sp = statePrefs();
+                                    if (sp != null) sp.edit().putBoolean("physComplete", nv).apply();
+                                    Log.i(TAG, "hotkey Ctrl+Shift+9 -> physComplete=" + nv + " (saved)");
+                                    banner("物理键盘补全：" + (nv ? "开" : "关"));
                                 }
                                 return true;
                             }
@@ -631,6 +700,15 @@ public final class SogouTranslator {
         if (cfg == null) cfg = LangConfig.load(m);
         final boolean changed = sConfig == null || !cfg.signature().equals(sConfig.signature());
         sConfig = cfg;
+        // 同步给 hook 用（hook 可能在非主线程被调用，不能让它直接读 sConfig）
+        sAutoPair = cfg.autoPair;
+        sPairMap = cfg.pairMap;
+        sPhysComplete = cfg.physComplete;
+        // 重试安装自动配对 hook：引擎类（UU 是输入会话类）要等真正开始输入才加载完，
+        // 首次在 installKeyGuards 里装时可能还拿不到。已装上的会在内部直接返回。
+        if (sService != null && sModule != null) {
+            AutoPairHook.install(sModule, sService.getClass().getClassLoader());
+        }
         if (changed) {
             if (sCtx != null && sPkg != null) {
                 Log.i(TAG, "config -> " + cfg.signature() + " | "

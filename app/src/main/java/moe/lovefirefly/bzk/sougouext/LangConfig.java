@@ -36,6 +36,24 @@ final class LangConfig {
     private static final String KEY_SLASH_MODE = "slashMode";
     private static final String KEY_CAPITAL_PINYIN = "capitalInPinyin";
 
+    /** 功能 S：引号/括号自动关闭（true=保留自动补另一半，false=禁用）。 */
+    private static final String KEY_AUTO_PAIR = "autoPair";
+
+    /** 功能 9：物理键盘自动补全（true = 打字即补另一半）。 */
+    private static final String KEY_PHYS_COMPLETE = "physComplete";
+
+    /** 功能 S 的自定义配对表：若干"前-后"配对依次排列（相邻两字符一组）。空=用输入法默认规则。 */
+    private static final String KEY_AUTO_PAIR_TABLE = "autoPairTable";
+
+    /**
+     * 「填入建议项」用的建议配对串。
+     *
+     * <p>前后各 10 个：ASCII 侧 {@code ' " ( ) [ ] { }} 与全角侧
+     * {@code 《》（）【】“”’‘}。只是给用户一个草稿，不是实际生效的默认值
+     * （留空才表示"用输入法默认匹配规则"）。
+     */
+    static final String SUGGEST_PAIR_TABLE = "''\"\"()[]{}《》（）【】\u201c\u201d\u2018\u2019";
+
     final List<String> order;
     final int divider;
 
@@ -60,9 +78,27 @@ final class LangConfig {
     /** 功能：中文态下大写字母也进拼音串（利用候选/英文补全），默认开。 */
     final boolean capitalInPinyin;
 
+    /** 功能 S：引号/括号自动关闭，默认开（= 保留搜狗原生配对）。关掉即 not(S) 生效：只出单字符。 */
+    final boolean autoPair;
+
+    /** 功能 S 的自定义配对串（相邻两字符一组）；空串 = 使用输入法默认匹配规则。 */
+    final String autoPairTable;
+
+    /** 功能 9：物理键盘自动补全，默认开。 */
+    final boolean physComplete;
+
+    /**
+     * 配对表：**开字符 → 闭字符**（由 {@link #autoPairTable} 一次性解析）。
+     *
+     * <p>用 Map 而不是每次扫字符串：查表 O(1)，而且**方向性由结构本身保证** ——
+     * 闭字符根本不是 key，所以"打闭字符反而补出开字符"这类问题不会发生。
+     */
+    final java.util.Map<Character, Character> pairMap;
+
     private LangConfig(List<String> order, int divider, boolean strict,
             boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering,
-            int slashMode, boolean capitalInPinyin) {
+            int slashMode, boolean capitalInPinyin, boolean autoPair, String autoPairTable,
+            boolean physComplete) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
@@ -72,6 +108,24 @@ final class LangConfig {
         this.smartNumbering = smartNumbering;
         this.slashMode = slashMode;
         this.capitalInPinyin = capitalInPinyin;
+        this.autoPair = autoPair;
+        this.autoPairTable = autoPairTable == null ? "" : autoPairTable;
+        this.physComplete = physComplete;
+        // 每 2 个字符一组：前 = 开字符（key），后 = 闭字符（value）。
+        // 只有开字符会成为 key，方向性由此天然保证；末尾落单字符忽略；
+        // 重复的开字符按"首次出现生效"（putIfAbsent），与旧的扫描行为一致。
+        final java.util.Map<Character, Character> m = new java.util.LinkedHashMap<>();
+        final String t = this.autoPairTable;
+        for (int i = 0; i + 1 < t.length(); i += 2) {
+            m.putIfAbsent(t.charAt(i), t.charAt(i + 1));
+        }
+        this.pairMap = java.util.Collections.unmodifiableMap(m);
+    }
+
+    /** 开字符 → 闭字符；该字符不是开字符时返回 0。 */
+    char closerFor(char c) {
+        final Character v = pairMap.get(c);
+        return v == null ? 0 : v;
     }
 
     static LangConfig load(XposedModule module) {
@@ -95,8 +149,11 @@ final class LangConfig {
             final boolean smartNumbering = sp.getBoolean(KEY_SMART_NUMBERING, true);
             final int slashMode = sp.getInt(KEY_SLASH_MODE, 0);
             final boolean capitalInPinyin = sp.getBoolean(KEY_CAPITAL_PINYIN, true);
+            final boolean autoPair = sp.getBoolean(KEY_AUTO_PAIR, true);
+            final String autoPairTable = sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE);
+            final boolean physComplete = sp.getBoolean(KEY_PHYS_COMPLETE, true);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                    slashMode, capitalInPinyin);
+                    slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return defaults();
@@ -114,7 +171,31 @@ final class LangConfig {
                 + "&" + KEY_EN_PUNCT + "=" + sp.getBoolean(KEY_EN_PUNCT, true)
                 + "&" + KEY_SMART_NUMBERING + "=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
                 + "&" + KEY_SLASH_MODE + "=" + sp.getInt(KEY_SLASH_MODE, 0)
-                + "&" + KEY_CAPITAL_PINYIN + "=" + sp.getBoolean(KEY_CAPITAL_PINYIN, true);
+                + "&" + KEY_CAPITAL_PINYIN + "=" + sp.getBoolean(KEY_CAPITAL_PINYIN, true)
+                + "&" + KEY_AUTO_PAIR + "=" + sp.getBoolean(KEY_AUTO_PAIR, true)
+                + "&" + KEY_PHYS_COMPLETE + "=" + sp.getBoolean(KEY_PHYS_COMPLETE, true)
+                // 配对串里可能出现 & 或 =，必须转义，否则会破坏 k=v&k=v 的行格式
+                + "&" + KEY_AUTO_PAIR_TABLE + "=" + encodeTable(
+                        sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE));
+    }
+
+    /** 配对串编解码：只做百分号转义，避免其中的 & 与 = 破坏配置行格式。 */
+    static String encodeTable(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        try {
+            return java.net.URLEncoder.encode(raw, "UTF-8");
+        } catch (Throwable err) {
+            return "";
+        }
+    }
+
+    static String decodeTable(String enc) {
+        if (enc == null || enc.isEmpty()) return "";
+        try {
+            return java.net.URLDecoder.decode(enc, "UTF-8");
+        } catch (Throwable err) {
+            return enc;
+        }
     }
 
     /** 模块侧解析上面那行；失败返回 null。 */
@@ -130,6 +211,9 @@ final class LangConfig {
             boolean num = true;
             int slash = 0;
             boolean capital = true;
+            boolean autoPair = true;
+            String autoPairTable = SUGGEST_PAIR_TABLE;
+            boolean physComplete = true;
             for (String kv : s.split("&")) {
                 final int i = kv.indexOf('=');
                 if (i <= 0) continue;
@@ -145,10 +229,14 @@ final class LangConfig {
                     case KEY_SMART_NUMBERING: num = Boolean.parseBoolean(v); break;
                     case KEY_SLASH_MODE: slash = Integer.parseInt(v); break;
                     case KEY_CAPITAL_PINYIN: capital = Boolean.parseBoolean(v); break;
+                    case KEY_AUTO_PAIR: autoPair = Boolean.parseBoolean(v); break;
+                    case KEY_PHYS_COMPLETE: physComplete = Boolean.parseBoolean(v); break;
+                    case KEY_AUTO_PAIR_TABLE: autoPairTable = decodeTable(v); break;
                     default: break;
                 }
             }
-            return parse(order, divider, strict, full, smart, en, num, slash, capital);
+            return parse(order, divider, strict, full, smart, en, num, slash, capital,
+                    autoPair, autoPairTable, physComplete);
         } catch (Throwable err) {
             Log.w(TAG, "parseDump failed: " + err);
             return null;
@@ -190,7 +278,7 @@ final class LangConfig {
 
     static LangConfig defaults() {
         return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
-                false, false, true, false, true);
+                false, false, true, false, true, 0, true, true, SUGGEST_PAIR_TABLE, true);
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
@@ -225,6 +313,14 @@ final class LangConfig {
     static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
             boolean capitalInPinyin) {
+        return parse(raw, divider, strict, fullwidth, smartPunct, enPunct, smartNumbering,
+                slashMode, capitalInPinyin, true, SUGGEST_PAIR_TABLE, true);
+    }
+
+    static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
+            boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
+            boolean capitalInPinyin, boolean autoPair, String autoPairTable,
+            boolean physComplete) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -237,7 +333,7 @@ final class LangConfig {
         }
         int d = Math.max(0, Math.min(divider, list.size()));
         return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                slashMode, capitalInPinyin);
+                slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete);
     }
 
     /** 分隔线上方（轮转集合），按顺序。 */
@@ -266,7 +362,11 @@ final class LangConfig {
         return String.join(",", order) + "|" + divider + "|strict=" + strict
                 + "|full=" + fullwidth + "|smart=" + smartPunct + "|en=" + enPunct
                 + "|num=" + smartNumbering + "|slash=" + slashMode
-                + "|cap=" + capitalInPinyin;
+                + "|cap=" + capitalInPinyin
+                + "|pair=" + autoPair
+                + "|phys=" + physComplete
+                // 表内容进签名，改表才能触发热重载
+                + "|pairtbl=" + autoPairTable;
     }
 
     static List<String> defaultOrder() {

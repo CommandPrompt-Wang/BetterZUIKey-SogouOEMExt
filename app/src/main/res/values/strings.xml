@@ -2,4 +2,9 @@
 <resources>
     <string name="app_name">搜狗输入法联想版增强</string>
     <string name="module_desc">为联想版搜狗输入法补出中英 subtype，让框架接管语言切换</string>
+    <string name="autopair_title">引号/括号配对</string>
+    <string name="autopair_desc">请输入偶数个字符表示前-后配对串。若留空表示使用输入法默认匹配规则</string>
+    <string name="autopair_suggest">填入建议项</string>
+    <string name="edit_pair_table">编辑匹配列表</string>
+    <string name="autopair_odd_error">长度必须是偶数（每两个字符一组：前字符 + 后字符）</string>
 </resources>
