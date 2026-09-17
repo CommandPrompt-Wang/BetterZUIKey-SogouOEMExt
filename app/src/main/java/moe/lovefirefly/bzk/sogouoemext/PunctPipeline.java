@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 /**
  * 标点管线：语义层（中文标点 / 键盘标点）→ 形式层（全角 / 半角）。

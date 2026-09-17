@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 import android.content.Context;
 import android.os.Handler;

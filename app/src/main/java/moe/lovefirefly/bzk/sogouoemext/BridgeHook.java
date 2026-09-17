@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 import android.content.Context;
 import android.util.Log;
@@ -24,7 +24,7 @@ import io.github.libxposed.api.XposedModuleInterface;
 public class BridgeHook extends XposedModule {
 
     private static final String TAG = "BZK-SogouOEMExt";
-    private static final String SELF_PKG = "moe.lovefirefly.bzk.sougouext";
+    private static final String SELF_PKG = "moe.lovefirefly.bzk.sogouoemext";
     private static final String SOGOU_PKG = "com.sohu.inputmethod.sogou.oem";
 
     /**

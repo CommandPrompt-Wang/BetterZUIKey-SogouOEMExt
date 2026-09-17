@@ -14,11 +14,11 @@ val signingProps = if (keystorePropertiesFile.exists()) {
 }
 
 android {
-    namespace = "moe.lovefirefly.bzk.sougouext"
+    namespace = "moe.lovefirefly.bzk.sogouoemext"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "moe.lovefirefly.bzk.sougouext"
+        applicationId = "moe.lovefirefly.bzk.sogouoemext"
         minSdk = 27
         targetSdk = 36
         versionCode = 2

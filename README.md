@@ -152,7 +152,7 @@ provider: dump self-check = ok (pairMap=18 pairs)
 ## 项目结构
 
 ```
-app/src/main/java/moe/lovefirefly/bzk/sougouext/
+app/src/main/java/moe/lovefirefly/bzk/sogouoemext/
 ├── BridgeHook.java         # Xposed 入口 + 开发期开关（DEV_*）
 ├── SogouTranslator.java    # 核心：subtype 注入时机 / marker 推进 / 快捷键与热键 / 配置轮询
 ├── SubtypeInjector.java     # 用搜狗身份补 subtype（绕开 uid 闸门）

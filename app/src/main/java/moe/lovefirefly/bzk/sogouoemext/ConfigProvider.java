@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
@@ -25,10 +25,10 @@ import androidx.annotation.Nullable;
 public class ConfigProvider extends ContentProvider {
 
     private static final String TAG = "BZK-SogouOEMExt";
-    private static final String SELF_PKG = "moe.lovefirefly.bzk.sougouext";
+    private static final String SELF_PKG = "moe.lovefirefly.bzk.sogouoemext";
     private static final String SOGOU_PKG = "com.sohu.inputmethod.sogou.oem";
 
-    public static final String AUTHORITY = "moe.lovefirefly.bzk.sougouext.config";
+    public static final String AUTHORITY = "moe.lovefirefly.bzk.sogouoemext.config";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/config");
     public static final String COLUMN = "config";
 

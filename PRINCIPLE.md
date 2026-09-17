@@ -170,7 +170,7 @@ strict: blocked native switch key KEYCODE_SHIFT_LEFT
 > 下拉与 BZK 同款：`TextInputLayout`（`hintEnabled=false` + `endIconMode=dropdown_menu` +
 > `boxBackgroundColor=?attr/colorSurfaceContainerHighest`）+ `MaterialAutoCompleteTextView`
 > （`inputType=none`）+ `res/layout/dropdown_item_wrap.xml` 条目。
-| **状态位** | 当前是**全角还是半角**、**中文还是英文标点** | **不在界面**：模块自己的 SharedPreferences（搜狗进程 `sougouext_state`），快捷键切换并立即落盘 | 半角 + 中文标点 |
+| **状态位** | 当前是**全角还是半角**、**中文还是英文标点** | **不在界面**：模块自己的 SharedPreferences（搜狗进程 `sogouoemext_state`），快捷键切换并立即落盘 | 半角 + 中文标点 |
 
 - `Shift+Space` → 全角 / 半角（切完弹横幅，状态持久化）
 - `Ctrl+.` → 中文标点 / 英文标点（同上）
@@ -439,7 +439,7 @@ synchronized(ImfLock) {
 
 | 项 | 值 |
 |---|---|
-| 包名 | `moe.lovefirefly.bzk.sougouext` |
+| 包名 | `moe.lovefirefly.bzk.sogouoemext` |
 | 仓库 | `git@github.com:CommandPrompt-Wang/BetterZUIKey-SogouOEMExt.git` |
 
 换过包名后注意：LSPosed 里要**重新启用**这个模块（作用域由模块静态声明，无需也无法手动勾选）；
@@ -460,7 +460,7 @@ synchronized(ImfLock) {
 |---|---|
 | `SIGNING_KEYSTORE` | `app-sign.keystore` 的 base64（本地已生成 `app-sign.keystore.b64`，`cat` 出来即可；该文件不入库） |
 | `SIGNING_PASS` | keystore 密码（`keystore.properties` 里的 `storePassword` / `keyPassword`，两者相同） |
-| `LSPOSED_REPO_TOKEN` | 可选。镜像到 `Xposed-Modules-Repo/moe.lovefirefly.bzk.sougouext` 用的 PAT；**不填则自动跳过该步** |
+| `LSPOSED_REPO_TOKEN` | 可选。镜像到 `Xposed-Modules-Repo/moe.lovefirefly.bzk.sogouoemext` 用的 PAT；**不填则自动跳过该步** |
 
 keyAlias 在 workflow 里写死（需与 keystore 内的 alias 一致）。
 

@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 import android.content.Context;
 import android.os.Bundle;
@@ -192,7 +192,7 @@ public final class SogouTranslator {
      * （搜狗进程的 files 目录，天然持久化）；App 的 ContentProvider 只管功能开关。
      * 默认：半角、中文标点。
      */
-    private static final String STATE_PREFS = "sougouext_state";
+    private static final String STATE_PREFS = "sogouoemext_state";
     private static final String KEY_FULL = "fullwidth";
     private static final String KEY_MODE_EN = "enPunct";
 

@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 import android.os.Bundle;
 import android.os.Handler;
@@ -17,24 +17,19 @@ import java.util.concurrent.TimeUnit;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * 开发期探针（两件事）：
+ * 开发期探针：找"当前语言"的状态读取口。
  *
- * <ol>
- *   <li><b>找"拼音/五笔"方案状态变量</b>：自动执行 切五笔(cta + keyboardEventId=1005) 与
- *       切拼音(cta + keyboardEventId=1002)，diff 出跟着变的字段。</li>
- *   <li><b>测 {@code InputMethodService.switchToNextInputMethod(true)}</b>：
- *       这是"把 marker 在 subtype 列表里挪一格"的候选手段，用于实现
- *       "从分隔线下方切出时回到第一项"。</li>
- * </ol>
+ * <p>做法：把候选对象（语言管理器 LUa 单例 + coa/WO 持有的管理器）上所有
+ * 无参且返回 int/boolean/String 的方法快照一遍，然后<b>自己执行</b>一次
+ * cta(中→英) 与 dta(英→中)，对比哪一项跟着翻转 —— 那就是语言状态，
+ * 拿到它就能把 ③ 改成幂等（不一致才切），彻底不再需要时间抑制窗口。
  */
-public final class SogouSchemeProbe {
+public final class SogouStateProbe {
 
     private static final String TAG = "BZK-SogouOEMExt";
-    private static final int EVENT_PINYIN = 1002;
-    private static final int EVENT_WUBI = 1005;
     private static volatile boolean sDone;
 
-    private SogouSchemeProbe() {}
+    private SogouStateProbe() {}
 
     public static void install(XposedModule module, ClassLoader cl) {
         try {
@@ -47,72 +42,59 @@ public final class SogouSchemeProbe {
                     final Object self = chain.getThisObject();
                     if (self != null && !sDone) {
                         sDone = true;
-                        final Thread t = new Thread(() -> run(self), "sogou-scheme-probe");
+                        Thread t = new Thread(() -> run(self), "sogou-state-probe");
                         t.setDaemon(true);
                         t.start();
                     }
                     return chain.proceed();
                 });
+                Log.i(TAG, "STATE hooked IMS#setInputView");
             }
-            Log.i(TAG, "SCHEME probe installed");
         } catch (Throwable err) {
-            Log.w(TAG, "SCHEME install failed: " + err);
+            Log.w(TAG, "STATE install failed: " + err);
         }
     }
 
     private static void run(Object service) {
         try {
-            Thread.sleep(2500);
+            Thread.sleep(2000);
             final Object wo = field(service, "b");
             final Object ep = field(wo, "e");
-            if (wo == null || ep == null) { Log.w(TAG, "SCHEME wo/ep null"); return; }
+            if (wo == null || ep == null) { Log.w(TAG, "STATE wo/ep null"); return; }
 
             final List<Object> subjects = new ArrayList<>();
             subjects.add(wo);
-            for (String f : new String[]{"c", "d", "e", "f", "h"}) subjects.add(field(service, f));
+            subjects.add(field(service, "c"));   // iP
+            subjects.add(field(service, "d"));   // Oaa
+            subjects.add(field(service, "e"));   // uP
+            subjects.add(field(service, "f"));   // wP
+            subjects.add(field(service, "h"));   // _A
             try {
-                final Class<?> lua = Class.forName("LUa", false,
-                        service.getClass().getClassLoader());
-                subjects.add(lua.getMethod("B").invoke(null));
+                final Class<?> lua = Class.forName("LUa", false, service.getClass().getClassLoader());
+                final Object inst = lua.getMethod("B").invoke(null);
+                if (inst != null) {
+                    subjects.add(inst);
+                    Log.i(TAG, "STATE LUa.B() ok: " + inst.getClass().getName());
+                }
             } catch (Throwable err) {
-                Log.i(TAG, "SCHEME LUa.B() unavailable: " + err);
+                Log.i(TAG, "STATE LUa.B() unavailable: " + err);
             }
 
             final Map<String, String> s0 = snapshot(subjects);
-            exec(ep, wo, -2, EVENT_WUBI);        // 切五笔
-            Thread.sleep(1000);
+            Log.i(TAG, "STATE baseline entries=" + s0.size());
+
+            exec(ep, wo, -2);                    // cta : 中 → 英
+            Thread.sleep(900);
             final Map<String, String> s1 = snapshot(subjects);
-            diff("to-wubi", s0, s1);
+            diff("cta(-2)", s0, s1);
 
-            exec(ep, wo, -2, EVENT_PINYIN);      // 切拼音
-            Thread.sleep(1000);
+            exec(ep, wo, -6);                    // dta : 英 → 中
+            Thread.sleep(900);
             final Map<String, String> s2 = snapshot(subjects);
-            diff("to-pinyin", s1, s2);
-
-            // --- switchToNextInputMethod(true)：能否让框架 subtype 前进一格 ---
-            final Object before = SogouTranslator.currentSubtype();
-            Log.i(TAG, "SWITCH before=" + desc(before));
-            try {
-                final Method m = service.getClass().getMethod(
-                        "switchToNextInputMethod", boolean.class);
-                m.setAccessible(true);
-                final Object r = m.invoke(service, true);
-                Log.i(TAG, "SWITCH switchToNextInputMethod(true) -> " + r);
-            } catch (Throwable err) {
-                Log.w(TAG, "SWITCH call failed: " + err);
-            }
-            Thread.sleep(1500);
-            Log.i(TAG, "SWITCH after=" + desc(SogouTranslator.currentSubtype()));
+            diff("dta(-6)", s1, s2);
         } catch (Throwable err) {
-            Log.w(TAG, "SCHEME probe failed: " + err);
+            Log.w(TAG, "STATE probe failed: " + err);
         }
-    }
-
-    private static String desc(Object subtype) {
-        if (!(subtype instanceof android.view.inputmethod.InputMethodSubtype)) return "null";
-        final android.view.inputmethod.InputMethodSubtype s =
-                (android.view.inputmethod.InputMethodSubtype) subtype;
-        return s.getLocale() + "/" + s.getMode() + " hash=" + s.hashCode();
     }
 
     private static Map<String, String> snapshot(List<Object> subjects) {
@@ -132,6 +114,7 @@ public final class SogouSchemeProbe {
                         m.setAccessible(true);
                         out.put(c.getSimpleName() + "#" + n, String.valueOf(m.invoke(o)));
                     } catch (Throwable ignored) {
+                        // 读不到就算了
                     }
                 }
             }
@@ -144,45 +127,45 @@ public final class SogouSchemeProbe {
         for (Map.Entry<String, String> e : b.entrySet()) {
             final String old = a.get(e.getKey());
             if (old == null || !old.equals(e.getValue())) {
-                Log.i(TAG, "SCHEME " + label + "  " + e.getKey() + ": " + old + " -> " + e.getValue());
+                Log.i(TAG, "STATE " + label + "  " + e.getKey() + ": " + old + " -> " + e.getValue());
                 n++;
             }
         }
-        Log.i(TAG, "SCHEME " + label + " changed=" + n);
+        Log.i(TAG, "STATE " + label + " changed=" + n);
     }
 
-    private static void exec(Object ep, Object wo, int id, int eventId) {
+    /** 必须在主线程执行：命令内部会更新 LiveData，后台线程会抛 IllegalStateException。 */
+    private static void exec(Object ep, Object wo, int id) {
         try {
             final Method lookup = ep.getClass().getDeclaredMethod("a", int.class);
             lookup.setAccessible(true);
             final Object cmd = lookup.invoke(ep, id);
-            if (cmd == null) { Log.w(TAG, "SCHEME command " + id + " null"); return; }
+            if (cmd == null) { Log.w(TAG, "STATE command " + id + " null"); return; }
             final Method run = cmd.getClass().getMethod("a", wo.getClass(), Bundle.class);
             run.setAccessible(true);
-            final Bundle args = new Bundle();
-            args.putInt("keyboardEventId", eventId);
 
             final Handler handler = new Handler(Looper.getMainLooper());
             final CountDownLatch latch = new CountDownLatch(1);
             final Throwable[] failure = new Throwable[1];
             handler.post(() -> {
                 try {
-                    run.invoke(cmd, wo, args);
+                    run.invoke(cmd, wo, new Bundle());
                 } catch (Throwable err) {
                     failure[0] = err;
                 } finally {
                     latch.countDown();
                 }
             });
-            if (!latch.await(3, TimeUnit.SECONDS)) {
-                Log.w(TAG, "SCHEME exec " + eventId + " timeout");
+            final boolean done = latch.await(3, TimeUnit.SECONDS);
+            if (!done) {
+                Log.w(TAG, "STATE exec " + id + " timeout");
             } else if (failure[0] != null) {
-                Log.w(TAG, "SCHEME exec failed: " + failure[0] + " cause=" + failure[0].getCause());
+                Log.w(TAG, "STATE exec failed: " + failure[0] + " cause=" + failure[0].getCause());
             } else {
-                Log.i(TAG, "SCHEME executed cta event=" + eventId);
+                Log.i(TAG, "STATE executed " + id + " (" + cmd.getClass().getSimpleName() + ")");
             }
         } catch (Throwable err) {
-            Log.w(TAG, "SCHEME exec failed: " + err);
+            Log.w(TAG, "STATE exec failed: " + err);
         }
     }
 
@@ -194,6 +177,7 @@ public final class SogouSchemeProbe {
                 f.setAccessible(true);
                 return f.get(obj);
             } catch (NoSuchFieldException ignored) {
+                // 继续往上
             } catch (Throwable err) {
                 return null;
             }

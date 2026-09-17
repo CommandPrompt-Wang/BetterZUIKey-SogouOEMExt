@@ -1,4 +1,4 @@
-package moe.lovefirefly.bzk.sougouext;
+package moe.lovefirefly.bzk.sogouoemext;
 
 /** 模块说明文字（首页"说明"页与 LSPosed 入口的 InfoActivity 共用一份）。 */
 final class InfoText {

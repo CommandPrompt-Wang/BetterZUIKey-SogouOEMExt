@@ -57,7 +57,7 @@ jobs:
         VERCODE=$(sed -n 's/.*versionCode = \([0-9]*\).*/\1/p' app/build.gradle.kts)
         VERNAME=$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts)
         TAG="${VERCODE}-${VERNAME// /_}"
-        REPO="Xposed-Modules-Repo/moe.lovefirefly.bzk.sougouext"
+        REPO="Xposed-Modules-Repo/moe.lovefirefly.bzk.sogouoemext"
         APK=$(ls app/build/outputs/apk/debug/BetterZUIKey-SogouOEMExt-v*.apk | head -n1)
         NOTES_FILE="$(mktemp)"
         printf '%s\n' "$RELEASE_BODY" > "$NOTES_FILE"
