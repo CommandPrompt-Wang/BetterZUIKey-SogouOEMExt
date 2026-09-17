@@ -27,7 +27,7 @@
 
 ### 其一：闭门塞户
 
-联想平板预装的**搜狗输入法联想 OEM 版**（`com.sohu.inputmethod.sogou.oem`，`versionCode 29496052` / `versionName 1.0.android_pad_lenovo_2024.20260130165252`）里明明有拼音 / 英语 / 五笔三种语言，但它只声明了一个 subtype，因此**框架完全不知道它们**。于是，系统与 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 中那套「切换到下一个输入法语言」不会起任何作用。能且只能通过 Shift 切换输入法语言。
+联想平板预装的**搜狗输入法联想 OEM 版**里明明有拼音 / 英语 / 五笔三种语言，但它只声明了一个 subtype，因此**框架完全不知道它们**。于是，系统与 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 中那套「切换到下一个输入法语言」不会起任何作用。能且只能通过 Shift 切换输入法语言。
 
 ### 其二：粗枝大叶
 
@@ -94,9 +94,9 @@
    | **版本** | `versionCode 29496052` / `versionName 1.0.android_pad_lenovo_2024.20260130165252` |
    | 来源 | 联想平板 `TB710FU`（Android 16）预装，位于 `/system/preinstall/SogouInput` |
 
-   > 模块按**这个版本**的搜狗内部符号实现（实测 + 逆向均基于它）。其他版本可能符号不同，届时功能会降级而不会崩溃，但请以本表版本为准。
+   > 模块按**这个版本**的搜狗内部符号实现（实测 + 逆向均基于它）。其他版本可能符号不同，届时功能可能会降级（而不会崩溃），但请以本表版本为准。
 1. 在 [Releases](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/releases) 下载 APK 并安装
-2. LSPosed Manager 里启用模块即可 —— 作用域由模块**静态声明**（`module.prop` 里 `staticScope=true`，`scope.list` 只有 `com.sohu.inputmethod.sogou.oem`），无需也无法手动勾选
+2. LSPosed Manager 里启用模块即可 —— 作用域由模块**静态声明**无需也无法手动勾选
 3. 打开模块 App，拖好语言顺序与分隔线
 4. 杀死输入法进程
 5. 多次进入/退出编辑以触发键盘弹出
