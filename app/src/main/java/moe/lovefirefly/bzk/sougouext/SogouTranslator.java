@@ -491,6 +491,8 @@ public final class SogouTranslator {
                             }
                             // 物理键盘补全：开字符上屏后，紧接着注入闭字符（功能 9）
                             if (commit) {
+                                // 引号键翻出来的开引号上屏了 → 这一下会补闭字符，标志位要多翻一格
+                                AutoPairHook.balanceQuoteToggleIfPaired(out);
                                 AutoPairHook.maybeInjectPair(chain.getThisObject(), out);
                             }
                             return result;

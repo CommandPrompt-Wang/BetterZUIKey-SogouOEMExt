@@ -53,6 +53,125 @@ final class AutoPairHook {
     static void install(XposedModule module, ClassLoader cl) {
         installGate(module, cl);
         installTable(module, cl);
+        installQuoteFlag(module, cl);    // ④ 引号标志位
+    }
+
+    /**
+     * 中文引号是"按一次翻一格"的开关：搜狗的 {@code KG.d(I)I}（键码 → 中文标点）用一对
+     * boolean 决定这次出开引号还是闭引号，每调一次翻一格。
+     *
+     * <p>我们替它把配对补全了（一次塞进开+闭两个字），却只让它翻了一格 ——
+     * 于是下一次按键落在"闭"的奇偶上，只吐出一个 {@code ”}。
+     *
+     * <p>补偿办法：配对补完之后，<b>用同一个方法再翻一格</b>。{@code KG.d(34)} / {@code KG.d(39)}
+     * 只借它的副作用（翻标志位），返回的那个字符丢掉。
+     */
+    private static volatile boolean sQuoteFlagInstalled;
+    private static volatile Object sQuoteMapper;     // KG 实例（标志位是它的字段）
+    private static volatile Method sQuoteMapMethod;  // KG.d(I)I
+
+    /** {@code KG.d} 刚产出、还没上屏的那个开引号（用来区分"引号键翻出来的"和符号页直接输入的）。 */
+    private static volatile char sPendingToggleOpen;
+    private static volatile long sPendingToggleAt;
+
+    private static void installQuoteFlag(XposedModule module, ClassLoader cl) {
+        if (sQuoteFlagInstalled) return;
+        try {
+            final Class<?> cls = Class.forName("KG", false, cl);
+            Method found = null;
+            for (Method m : cls.getDeclaredMethods()) {
+                if (!m.getName().equals("d")) continue;
+                // 精确：单个 int 参数、返回 int（同名还有别的重载）
+                if (!matchParams(m, int.class)) continue;
+                if (m.getReturnType() != int.class) continue;
+                found = m;
+                break;
+            }
+            if (found == null) {
+                sQuoteFlagInstalled = true;
+                warnOnce("quoteflag: KG.d(I)I not found, quote parity not balanced");
+                return;
+            }
+            found.setAccessible(true);
+            sQuoteMapMethod = found;
+            module.hook(found).intercept(chain -> {
+                // 每次按键都会路过这里 —— 顺手记住是哪个实例管着这对标志位
+                sQuoteMapper = chain.getThisObject();
+                final Object r = chain.proceed();
+                if (r instanceof Integer) {
+                    final char c = (char) ((Integer) r).intValue();
+                    if (c == '\u201c' || c == '\u2018') {     // 引号键刚翻出一个开引号
+                        sPendingToggleOpen = c;
+                        sPendingToggleAt = System.currentTimeMillis();
+                    }
+                }
+                if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                    Log.i(TAG, "quotemap: d(" + chain.getArg(0) + ") -> "
+                            + (r instanceof Integer ? String.valueOf((char) ((Integer) r).intValue()) : String.valueOf(r)));
+                }
+                return r;
+            });
+            sQuoteFlagInstalled = true;
+            Log.i(TAG, "quoteflag hooked " + cls.getName() + "#" + found.getName());
+        } catch (ClassNotFoundException err) {
+            // 键盘起来才加载，交给配置轮询重试
+            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                Log.i(TAG, "quoteflag: KG not loaded yet, will retry");
+            }
+        } catch (Throwable err) {
+            sQuoteFlagInstalled = true;
+            warnOnce("quoteflag install failed: " + err);
+        }
+    }
+
+    /**
+     * 上屏的如果是<b>引号键刚翻出来的开引号</b>，而这一下确实会补上闭字符 —— 就把标志位多翻一格。
+     *
+     * <p>判据三条缺一不可：
+     * <ol>
+     *   <li>这个开引号来自 {@code KG.d}（引号键的翻转），而不是符号页直接敲的 —— 后者没翻，补翻就错了；</li>
+     *   <li>这一下真的会配对：物理键盘看功能 9，软键盘看 S；</li>
+     *   <li>自定义表里确实有它的闭字符。</li>
+     * </ol>
+     *
+     * <p>不能用闸门返回值当判据：物理路径上搜狗只提交单字符，它照样返回 true（踩过）。
+     */
+    static void balanceQuoteToggleIfPaired(final CharSequence committed) {
+        if (committed == null || committed.length() != 1) return;
+        final char open = committed.charAt(0);
+        if (open == 0 || open != sPendingToggleOpen) return;
+        if (System.currentTimeMillis() - sPendingToggleAt > 800L) return;
+        final boolean willPair = sHwKeyDown
+                ? SogouTranslator.physCompleteActive()     // 物理侧：功能 9
+                : SogouTranslator.autoPairEnabled();       // 软键盘侧：S
+        if (!willPair) return;
+        if (SogouTranslator.autoPairMap().get(open) == null) return;
+        sPendingToggleOpen = 0;                            // 单次有效
+        balanceQuoteToggle(open);
+    }
+
+    /**
+     * 配对补全之后，把引号标志位多翻一格（只对中文引号 {@code “} / {@code ‘} 有意义）。
+     *
+     * <p>必须在配对<b>确实补上了</b>之后调用：S 关掉或没配对成功时搜狗只提交单字符，
+     * 那一格翻转是它自己该有的，再去补就翻错了。
+     */
+    static void balanceQuoteToggle(final char open) {
+        final int code;
+        if (open == '\u201c') code = '"';           // “ ← 键码 "
+        else if (open == '\u2018') code = '\'';    // ‘ ← 键码 '
+        else return;
+        final Object owner = sQuoteMapper;
+        final Method m = sQuoteMapMethod;
+        if (owner == null || m == null) return;     // 还没抓到实例 → 静默降级
+        try {
+            m.invoke(owner, code);
+            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                Log.i(TAG, "quotebalance: " + open + " -> 再翻一格");
+            }
+        } catch (Throwable err) {
+            Log.w(TAG, "quotebalance failed: " + err);
+        }
     }
 
     // ------------------------------------------------------------------
@@ -83,10 +202,13 @@ final class AutoPairHook {
             found.setAccessible(true);
             module.hook(found).intercept(chain -> {
                 try {
-                    if (!SogouTranslator.autoPairEnabled()) {
-                        // not(S) 生效：告诉调用方"没配对"，它会提交单字符
+                    // S 管软键盘那一侧；物理键盘归功能 9（我们自己注入闭字符）。
+                    // 物理按键时也必须拦住搜狗的配对 —— 实测它自己会分两次单字符提交
+                    // 把 “” 补全，我们再插一个就成三个字符了。
+                    if (!SogouTranslator.autoPairEnabled() || sHwKeyDown) {
                         if (BridgeHook.DEV_AUTOPAIR_LOG) {
-                            Log.i(TAG, "autopair: gate blocked -> " + chain.getArg(1));
+                            Log.i(TAG, "autopair: gate blocked ("
+                                    + (sHwKeyDown ? "hardware" : "S off") + ") -> " + chain.getArg(1));
                         }
                         return Boolean.FALSE;
                     }
