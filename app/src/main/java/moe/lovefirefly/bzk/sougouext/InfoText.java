@@ -39,7 +39,8 @@ final class InfoText {
             "     - down/up 共享同一 downTime\n" +
             "     - 真实 deviceId / scanCode=42 / source=SOURCE_KEYBOARD\n" +
             "\n" +
-            "用法：LSPosed 里给本模块勾选 com.sohu.inputmethod.sogou.oem，\n" +
+            "用法：LSPosed 里启用本模块即可（作用域已静态声明为\n" +
+            "com.sohu.inputmethod.sogou.oem，无需也无法手动勾选），\n" +
             "然后切到搜狗一次。日志：logcat -s SogouOemBridge\n"
         ;
     }

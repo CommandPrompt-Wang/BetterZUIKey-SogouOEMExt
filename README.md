@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>搜狗输入法联想版增强</h1>
-<img src="img/icon.png" width="120" alt="BetterZUIKey-SougouOEMExt">
+<img src="img/icon.png" width="120" alt="BetterZUIKey-SogouOEMExt">
 <p></p>
 <p>
    简体中文
@@ -87,8 +87,8 @@
 ## 模块安装
 
 0. **前置条件**：已安装 [LSPosed](https://github.com/LSPosed/LSPosed) + 联想 OEM 版搜狗输入法（`com.sohu.inputmethod.sogou.oem`）
-1. 在 [Releases](https://github.com/CommandPrompt-Wang/BetterZUIKey-SougouOEMExt/releases) 下载 APK 并安装
-2. LSPosed Manager 里启用模块，作用域为 `com.sohu.inputmethod.sogou.oem` 静态作用域
+1. 在 [Releases](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/releases) 下载 APK 并安装
+2. LSPosed Manager 里启用模块即可 —— 作用域由模块**静态声明**（`module.prop` 里 `staticScope=true`，`scope.list` 只有 `com.sohu.inputmethod.sogou.oem`），无需也无法手动勾选
 3. 打开模块 App，拖好语言顺序与分隔线
 4. 杀死输入法进程
 5. 多次进入/退出编辑以触发键盘弹出
@@ -98,10 +98,10 @@
 ## 开发构建
 
 ```bash
-git clone git@github.com:CommandPrompt-Wang/BetterZUIKey-SougouOEMExt.git
-cd BetterZUIKey-SougouOEMExt
+git clone git@github.com:CommandPrompt-Wang/BetterZUIKey-SogouOEMExt.git
+cd BetterZUIKey-SogouOEMExt
 ./gradlew :app:assembleDebug
-# APK: app/build/outputs/apk/debug/BetterZUIKey-SougouOEMExt-v<versionName>.apk
+# APK: app/build/outputs/apk/debug/BetterZUIKey-SogouOEMExt-v<versionName>.apk
 ```
 
 需要 JDK 17 + Android SDK 37（`compileSdk 37` / `minSdk 27` / `targetSdk 36`），以及 [libxposed](https://github.com/libxposed/api)（`xposedminversion=93`）。

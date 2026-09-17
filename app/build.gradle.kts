@@ -57,7 +57,7 @@ androidComponents {
     onVariants { variant ->
         variant.outputs.forEach { output ->
             (output as VariantOutputImpl).outputFileName.set(
-                "BetterZUIKey-SougouOEMExt-v${output.versionName.get()}.apk"
+                "BetterZUIKey-SogouOEMExt-v${output.versionName.get()}.apk"
             )
         }
     }

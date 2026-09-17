@@ -373,7 +373,6 @@ synchronized(ImfLock) {
 - 旧版那套"按 locale 找另一种语言"（`pickTargetSubtype` / `isEnSubtype` / `isZhLocale` /
   `setSubtypeLocked`）已**删除**：它只有中↔英两态，遇到"拼音/五笔都是 zh-CN"或"英文不在
   subtype 里"就会选错、甚至因为 `onlyCurrentIme=false` 跳到别的输入法；
-- 代价（已知并接受）：GBoard 这种多 subtype 输入法会按 中文 → Alphabet → 日本語 的顺序循环。
 - Ctrl+Shift **永远不会切换输入法**：只有本输入法内没有下一个 subtype 时才什么都不做。
 
 ## 5. 用法
@@ -436,16 +435,15 @@ synchronized(ImfLock) {
 > `RuntimeException: Unable to get provider androidx.startup.InitializationProvider`。
 > 想压体积就用 release + R8（`minifyEnabled`），或把界面改成自绘卡片。
 
-## 包名 / 签名 / 仓库
+## 包名 / 仓库
 
 | 项 | 值 |
 |---|---|
 | 包名 | `moe.lovefirefly.bzk.sougouext` |
-| 签名 | 同一套签名配置（`app-sign.keystore` + `keystore.properties`，两者都**不入库**；证书 SHA-256 `***REMOVED***`） |
-| 仓库 | `git@github.com:CommandPrompt-Wang/BetterZUIKey-SougouOEMExt.git` |
+| 仓库 | `git@github.com:CommandPrompt-Wang/BetterZUIKey-SogouOEMExt.git` |
 
-换过包名后注意：LSPosed 里要**重新启用**这个模块并勾选作用域
-`com.sohu.inputmethod.sogou.oem`；语言顺序配置存在模块包名对应的 remote preferences 里，
+换过包名后注意：LSPosed 里要**重新启用**这个模块（作用域由模块静态声明，无需也无法手动勾选）；
+语言顺序配置存在模块包名对应的 remote preferences 里，
 新包名会是**默认配置**，需要重新拖一次。
 
 ## CI（与 BZK 同一套）
@@ -464,12 +462,12 @@ synchronized(ImfLock) {
 | `SIGNING_PASS` | keystore 密码（`keystore.properties` 里的 `storePassword` / `keyPassword`，两者相同） |
 | `LSPOSED_REPO_TOKEN` | 可选。镜像到 `Xposed-Modules-Repo/moe.lovefirefly.bzk.sougouext` 用的 PAT；**不填则自动跳过该步** |
 
-keyAlais 在 workflow 里写死为 `betterzuikey.sign`（同一套签名配置 / alias）。
+keyAlias 在 workflow 里写死（需与 keystore 内的 alias 一致）。
 
 **版号与 tag（模仿 BZK）**
 
 - 版本写在 `app/build.gradle.kts` 的 `versionCode` / `versionName`；
-- APK 命名：`BetterZUIKey-SougouOEMExt-v<versionName>.apk`；
+- APK 命名：`BetterZUIKey-SogouOEMExt-v<versionName>.apk`；
 - LSPosed 镜像 tag：`<versionCode>-<versionName>`。
 
 > nightly 那个 workflow 是按 BZK 原样镜像的（`dev` + `[Nightly]` 前缀）；本仓库目前只有 `main`，
