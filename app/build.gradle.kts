@@ -5,7 +5,7 @@ plugins {
     id("com.android.application")
 }
 
-// 签名配置：keystore.properties + app-sign.keystore（都不入库）
+// 签名：keystore.properties + app-sign.keystore（都不入库；缺任一个则不加签名配置）
 val keystorePropertiesFile = rootProject.file("keystore.properties")
 val signingProps = if (keystorePropertiesFile.exists()) {
     Properties().apply { load(keystorePropertiesFile.inputStream()) }
