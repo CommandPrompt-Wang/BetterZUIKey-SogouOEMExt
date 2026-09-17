@@ -3,6 +3,8 @@
 
     <queries>
         <package android:name="moe.lovefirefly.betterzuikey" />
+        <!-- 配置改完要发显式广播给搜狗，所以得能"看见"它 -->
+        <package android:name="com.sohu.inputmethod.sogou.oem" />
     </queries>
 
     <application

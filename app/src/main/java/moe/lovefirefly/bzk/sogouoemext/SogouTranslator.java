@@ -672,20 +672,28 @@ public final class SogouTranslator {
     }
 
     /**
-     * 定时轮询配置（2 秒）。
+     * 配置监听：App 改完开关会发一条广播（{@link ConfigPoke}）立刻生效；
+     * 这里的轮询退成 5 秒兜底（App 不在前台、模块刚重启等情况下补上）。
      *
-     * <p>界面上的开关/顺序改完，最多 2 秒就生效，不用等下一次输入会话、也不用重启进程。
-     * 签名没变时 {@link #reloadConfig()} 什么都不做，开销可以忽略。
+     * <p>签名没变时 {@link #reloadConfig()} 什么都不做，开销可以忽略。
      */
     private static void startConfigWatch() {
         final Handler handler = new Handler(Looper.getMainLooper());
         handler.postDelayed(new Runnable() {
             @Override public void run() {
                 reloadConfig();
-                handler.postDelayed(this, 2000);
+                handler.postDelayed(this, 5000);
             }
-        }, 2000);
-        Log.i(TAG, "config watch started (2s)");
+        }, 5000);
+        Log.i(TAG, "config watch started (5s, 兜底)");
+        // 即时通道：App 一改就发广播戳一下，不用等这一轮轮询（轮询退成兜底）
+        ConfigPoke.start(sService instanceof android.content.Context
+                ? (android.content.Context) sService : sCtx);
+    }
+
+    /** 收到 App 的"配置变了"广播时调用：立刻重读（内部有签名比对，没变就什么都不做）。 */
+    static void pokeReload() {
+        reloadConfig();
     }
 
     /** 读（并应用）语言顺序配置；注入是幂等的，只有变化时才真的写 IMMS。 */

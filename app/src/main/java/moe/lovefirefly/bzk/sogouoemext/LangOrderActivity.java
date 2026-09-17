@@ -246,6 +246,7 @@ public class LangOrderActivity extends AppCompatActivity {
         if (!prefs.contains("strict")) {
             final boolean bzk = hasBetterZUIKey();
             prefs.edit().putBoolean("strict", bzk).apply();
+            sendConfigPoke();
             android.util.Log.i(TAG, "UI: seed strict=" + bzk + " (first run)");
         }
         final LangConfig cfg0 = LangConfig.load(prefs);
@@ -358,7 +359,8 @@ public class LangOrderActivity extends AppCompatActivity {
                         return;                                  // 奇数不保存
                     }
                     prefs.edit().putString("autoPairTable", raw).apply();
-                    Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
+        sendConfigPoke();
+                    Toast.makeText(this, "已保存（立即生效）", Toast.LENGTH_SHORT).show();
                     dialog.dismiss();
                 }));
 
@@ -411,14 +413,26 @@ public class LangOrderActivity extends AppCompatActivity {
     /** 统一的保存入口（写本机，模块最多 2 秒后来读）。 */
     private void putBool(String key, boolean value) {
         prefs.edit().putBoolean(key, value).apply();
+        sendConfigPoke();
         android.util.Log.i(TAG, "UI: " + key + " saved = " + value);
-        Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "已保存（立即生效）", Toast.LENGTH_SHORT).show();
     }
 
     private void putInt(String key, int value) {
         prefs.edit().putInt(key, value).apply();
+        sendConfigPoke();
         android.util.Log.i(TAG, "UI: " + key + " saved = " + value);
-        Toast.makeText(this, "已保存（最多 2 秒生效）", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "已保存（立即生效）", Toast.LENGTH_SHORT).show();
+    }
+
+    /** 配置改完立刻戳一下模块：广播不带数据，模块收到就重读（不再等轮询）。 */
+    private void sendConfigPoke() {
+        try {
+            final android.content.Intent i = new android.content.Intent(ConfigPoke.ACTION);
+            i.setPackage("com.sohu.inputmethod.sogou.oem");
+            sendBroadcast(i);
+        } catch (Throwable ignored) {
+        }
     }
 
     private int themeColor(int attrRes) {
@@ -484,7 +498,8 @@ public class LangOrderActivity extends AppCompatActivity {
                 .putString("order", String.join(",", order))
                 .putInt("divider", divider)
                 .apply();
-        Toast.makeText(this, "已保存（下次弹出键盘生效）", Toast.LENGTH_SHORT).show();
+        sendConfigPoke();
+        Toast.makeText(this, "已保存（立即生效）", Toast.LENGTH_SHORT).show();
     }
 
     private void updateHint() {
