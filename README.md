@@ -9,7 +9,7 @@
 
 [![Android](https://img.shields.io/badge/API-27%2B-green)](https://developer.android.com/about/versions/8.1) [![Xposed](https://img.shields.io/badge/Xposed-LSPosed-blue)](https://github.com/LSPosed/LSPosed) [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/projects/jdk/17/) [![License](https://img.shields.io/badge/License-GPL--3.0-orange)](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/blob/main/LICENSE)
 
-<p>把联想 OEM 版搜狗输入法的增强模块</p>
+<p>把联想 OEM 版搜狗输入法（<code>29496052</code> / <code>1.0.android_pad_lenovo_2024.20260130165252</code>）的增强模块</p>
 
 </div>
 
@@ -27,7 +27,7 @@
 
 ### 其一：闭门塞户
 
-联想平板预装的**搜狗输入法联想 OEM 版**里明明有拼音 / 英语 / 五笔三种语言，但它只声明了一个 subtype，因此**框架完全不知道它们**。于是，系统与 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 中那套「切换到下一个输入法语言」不会起任何作用。能且只能通过 Shift 切换输入法语言。
+联想平板预装的**搜狗输入法联想 OEM 版**（`com.sohu.inputmethod.sogou.oem`，`versionCode 29496052` / `versionName 1.0.android_pad_lenovo_2024.20260130165252`）里明明有拼音 / 英语 / 五笔三种语言，但它只声明了一个 subtype，因此**框架完全不知道它们**。于是，系统与 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 中那套「切换到下一个输入法语言」不会起任何作用。能且只能通过 Shift 切换输入法语言。
 
 ### 其二：粗枝大叶
 
@@ -86,7 +86,15 @@
 
 ## 模块安装
 
-0. **前置条件**：已安装 [LSPosed](https://github.com/LSPosed/LSPosed) + 联想 OEM 版搜狗输入法（`com.sohu.inputmethod.sogou.oem`）
+0. **前置条件**：已安装 [LSPosed](https://github.com/LSPosed/LSPosed) + 联想 OEM 版搜狗输入法
+
+   | 项 | 值 |
+   | --- | --- |
+   | 包名 | `com.sohu.inputmethod.sogou.oem` |
+   | **版本** | `versionCode 29496052` / `versionName 1.0.android_pad_lenovo_2024.20260130165252` |
+   | 来源 | 联想平板 `TB710FU`（Android 16）预装，位于 `/system/preinstall/SogouInput` |
+
+   > 模块按**这个版本**的搜狗内部符号实现（实测 + 逆向均基于它）。其他版本可能符号不同，届时功能会降级而不会崩溃，但请以本表版本为准。
 1. 在 [Releases](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/releases) 下载 APK 并安装
 2. LSPosed Manager 里启用模块即可 —— 作用域由模块**静态声明**（`module.prop` 里 `staticScope=true`，`scope.list` 只有 `com.sohu.inputmethod.sogou.oem`），无需也无法手动勾选
 3. 打开模块 App，拖好语言顺序与分隔线
@@ -145,7 +153,7 @@ provider: dump self-check = ok (pairMap=18 pairs)
 
 - 先读内置的「原理 / 说明」，理解每个开关的含义再动手
 - 不当配置可能导致**切不到某个语言**、标点/配对行为异常
-- 本模块对工班搜狗无效，只针对联想 OEM 版
+- 只针对 `com.sohu.inputmethod.sogou.oem` 的**联想 OEM 版 `29496052` / `1.0.android_pad_lenovo_2024.20260130165252`**，对公版搜狗、其他厂商 OEM 版、以及其他版本号一律无效
 
 开发者不承担因使用本模块造成的输入异常、数据丢失或设备故障的任何责任。
 
