@@ -292,9 +292,8 @@ public class LangOrderActivity extends AppCompatActivity {
         return sw;
     }
 
-    /** 标点三个开关（与 BZK 无关，任何时候都能用）。 */
     /**
-     * 长按「引号/括号自动关闭」→ 编辑自定义配对串。
+     * 「编辑匹配列表」→ 编辑自定义配对串。
      *
      * <p>串是若干「前-后」配对依次排列（相邻两字符为一组），所以长度必须为偶数。
      * 留空表示使用输入法默认匹配规则（此时模块不介入，完全走搜狗自己的表）。
@@ -310,11 +309,16 @@ public class LangOrderActivity extends AppCompatActivity {
                 .TextAppearance_Material3_BodySmall);
         desc.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
 
-        // 输入框：hint 与默认值都用建议串
+        // 输入框：hint 与默认值都用建议串。
+        // 建议串有 36 个字符，单行会被截断 → 用会自动换行的多行框；
+        // 多行框按回车能插换行，所以在"读文字"这一步统一去掉换行符再去校验对数。
         final android.widget.EditText input = new android.widget.EditText(this);
         input.setHint(LangConfig.SUGGEST_PAIR_TABLE);
-        input.setSingleLine(true);
-        input.setText(prefs.getString("autoPairTable", LangConfig.SUGGEST_PAIR_TABLE));
+        input.setSingleLine(false);
+        input.setMinLines(2);
+        input.setMaxLines(4);
+        input.setHorizontallyScrolling(false);
+        input.setText(noNewlines(prefs.getString("autoPairTable", LangConfig.SUGGEST_PAIR_TABLE)));
         input.setSelection(input.getText().length());
 
         // 「填入建议项」：左对齐，放在输入框下方（对话框底部按钮区由 取消/保存 占用）
@@ -345,7 +349,7 @@ public class LangOrderActivity extends AppCompatActivity {
 
         dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
                 .setOnClickListener(v -> {
-                    final String value = input.getText().toString().trim();
+                    final String value = noNewlines(input.getText().toString()).trim();
                     if (value.length() % 2 != 0) {
                         Toast.makeText(this, R.string.autopair_odd_error,
                                 Toast.LENGTH_SHORT).show();
@@ -357,6 +361,11 @@ public class LangOrderActivity extends AppCompatActivity {
                 }));
 
         dialog.show();
+    }
+
+    /** 配对表文本框允许自动换行，回填与保存都去掉 {@code \r\n}（配对串本身不含换行）。 */
+    private static String noNewlines(String s) {
+        return s == null ? "" : s.replace("\r", "").replace("\n", "");
     }
 
     private void bindPunctSwitches(LangConfig cfg) {

@@ -48,11 +48,11 @@ final class LangConfig {
     /**
      * 「填入建议项」用的建议配对串。
      *
-     * <p>前后各 10 个：ASCII 侧 {@code ' " ( ) [ ] { }} 与全角侧
-     * {@code 《》（）【】“”’‘}。只是给用户一个草稿，不是实际生效的默认值
-     * （留空才表示"用输入法默认匹配规则"）。
+     * <p>共 18 对：半角 / 全角、中英引号、中文括号各自成对。它同时是编辑窗口的
+     * hint、初始值，以及「填入建议项」填入的内容（完整串见 README 3.8）。
      */
-    static final String SUGGEST_PAIR_TABLE = "''\"\"()[]{}《》（）【】\u201c\u201d\u2018\u2019";
+    static final String SUGGEST_PAIR_TABLE =
+            "()[]{}（）【】《》\"\"''“”‘’〈〉「」『』〖〗〔〕［］｛｝＜＞";
 
     final List<String> order;
     final int divider;
