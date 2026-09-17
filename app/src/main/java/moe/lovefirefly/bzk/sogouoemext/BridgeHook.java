@@ -33,7 +33,7 @@ public class BridgeHook extends XposedModule {
      * <p>日志已证实守卫能命中搜狗自己的切换路径（{@code blocked sogou self switch}）；
      * 这里先置 false 做基准重测，确认基础路径后再打开。
      */
-    private static final boolean ENABLE_STRICT = true;
+    static final boolean ENABLE_STRICT = true;
 
     /** 开发期：追踪搜狗请求的命令 id + dump 注册表（定位其它语言路径时打开）。 */
     static final boolean DEV_CMD_TRACE = false;
@@ -86,7 +86,10 @@ public class BridgeHook extends XposedModule {
                     Log.w(TAG, "no system context");
                     return;
                 }
-                final LangConfig cfg = LangConfig.load(this);
+                // 真实来源是 App 的本机 prefs（ContentProvider）。remote prefs 由框架托管，
+                // 本模块没有任何写入者 → 读出来是全默认值（strict=false 之类），只能当兜底。
+                LangConfig cfg = LangConfig.loadFromProvider(ctx.getContentResolver());
+                if (cfg == null) cfg = LangConfig.load(this);
                 Log.i(TAG, "subtype: " + SubtypeInjector.apply(ctx, pkg, cfg));
                 final boolean bzk = hasBetterZUIKey(ctx);
                 final boolean strict = ENABLE_STRICT && cfg.strict;

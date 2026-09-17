@@ -714,6 +714,11 @@ public final class SogouTranslator {
         sAutoPair = cfg.autoPair;
         sPairMap = cfg.pairMap;
         sPhysComplete = cfg.physComplete;
+        // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
+        // （否则 sStrict 永远停在会话启动时读到的那个值）
+        final boolean strictNow = BridgeHook.ENABLE_STRICT && cfg.strict;
+        if (strictNow != sStrict) Log.i(TAG, "strict -> " + strictNow);
+        setStrict(strictNow);
         // 重试安装自动配对 hook：引擎类（UU 是输入会话类）要等真正开始输入才加载完，
         // 首次在 installKeyGuards 里装时可能还拿不到。已装上的会在内部直接返回。
         if (sService != null && sModule != null) {
