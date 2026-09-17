@@ -215,6 +215,9 @@ CHINESE: ，。、、；：！？（）【】《》“‘＋－＊＝｛｝｜�
 只在中文标点这一侧生效（英文输入态 / 英文标点状态位下原样放行）；命中才新建
 StringBuilder，没命中返回 `null` 零额外分配。与 Gboard 侧 `SymbolNorm` 的语义一致。
 
+**真机实测（1.2.0 构建，用户确认）**：开启态下按一次破折号键出 `——`、省略号键出 `……` ✓
+（说明搜狗确实是一次提交一个字符）；`Ctrl+Shift+0` 切到关即回到各一个。
+
 **实现位置**：`android.inputmethodservice.RemoteInputConnection#commitText/setComposingText`
 （IME 进程内，用 libxposed 的 `Chain.proceed(Object[])` 替换参数）；按键在 `coa#onKeyDown/onKeyUp`。
 启动会打 `punct: table self-check ok (32 pairs)` 自检表；provider 会打 `dump self-check = ok` 自检键名。
