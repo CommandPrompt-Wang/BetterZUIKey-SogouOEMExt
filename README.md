@@ -7,7 +7,7 @@
    简体中文
 </p>
 
-[![Android](https://img.shields.io/badge/API-27%2B-green)](https://developer.android.com/about/versions/8.1) [![Xposed](https://img.shields.io/badge/Xposed-LSPosed-blue)](https://github.com/LSPosed/LSPosed) [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/projects/jdk/17/) [![Version](https://img.shields.io/badge/Version-1.1.0-blue)](https://github.com/CommandPrompt-Wang/BetterZUIKey-SougouOEMExt/releases) [![License](https://img.shields.io/badge/License-GPL--3.0-orange)](LICENSE)
+[![Android](https://img.shields.io/badge/API-27%2B-green)](https://developer.android.com/about/versions/8.1) [![Xposed](https://img.shields.io/badge/Xposed-LSPosed-blue)](https://github.com/LSPosed/LSPosed) [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/projects/jdk/17/) [![License](https://img.shields.io/badge/License-GPL--3.0-orange)](LICENSE)
 
 <p>把联想 OEM 版搜狗输入法的增强模块</p>
 
@@ -56,7 +56,7 @@
   - 这是一个与 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 联动的功能
 - **标点管线**：分离中英标点和全角半角状态位，允许独立切换
 - **中文态大写字母**：
-- **引号 / 括号自动补全**：两个独立开关共用一份可编辑的匹配列表（默认 18 对）
+- **引号 / 括号自动关闭**：两个独立开关共用一份可编辑的匹配列表（默认 18 对）
   - 软键盘：修改搜狗原生配对，改用自定义列表
   - 物理键盘：打字即自动补闭字符，`Ctrl+Shift+9` 可临时切换开关
 - **配置热生效** —— 每 2 秒懒检查配置变化，更新配置无需重启输入法
@@ -101,7 +101,7 @@
 git clone git@github.com:CommandPrompt-Wang/BetterZUIKey-SougouOEMExt.git
 cd BetterZUIKey-SougouOEMExt
 ./gradlew :app:assembleDebug
-# APK: app/build/outputs/apk/debug/BetterZUIKey-SougouOEMExt-v1.1.0.apk
+# APK: app/build/outputs/apk/debug/BetterZUIKey-SougouOEMExt-v<versionName>.apk
 ```
 
 需要 JDK 17 + Android SDK 37（`compileSdk 37` / `minSdk 27` / `targetSdk 36`），以及 [libxposed](https://github.com/libxposed/api)（`xposedminversion=93`）。
@@ -120,7 +120,7 @@ cd BetterZUIKey-SougouOEMExt
 | 智能编号 | 中文模式下，任意数字后面的 `。` `）` 改用半角，以形成 `1.` `2)` 这类编号 | 开 |
 | 大写字母进拼音栏 | 中文态下 `Shift`+字母也整词进拼音，上屏时按记录还原大小写<br/>切换快捷键：`Ctrl+Shift+9` | 开 |
 | 引号/括号自动补全 | 软键盘打 `（` → 自动补 `）` 并把光标移进中间；配对规则来自「编辑匹配列表」 | 关 |
-| 物理键盘自动补全 | 物理键盘打 `（` → 模块注入 `）` 并移光标（这一侧会拦住搜狗自己的配对，免得配两遍）；`Ctrl+Shift+9` 可临时开关 | 关 |
+| 物理键盘自动补全 | 物理键盘打 `（` → 模块注入 `）` 并移光标；`Ctrl+Shift+9` 可临时开关 | 关 |
 | 全角模式 | 标点与数字全部输出全角（`，` `１`），关闭则半角<br/>切换快捷键：`Shift+Space` | 开 |
 | 中英文标点 | 中文态下也输出 ASCII 标点（英文标点模式）<br/>切换快捷键：`Ctrl+.` | 开 |
 | 只响应系统框架语言切换消息 | 严格模式：屏蔽搜狗原生切换键，只接受框架信号 | 关 |

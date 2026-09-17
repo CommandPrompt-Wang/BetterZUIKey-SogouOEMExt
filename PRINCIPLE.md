@@ -468,9 +468,9 @@ keyAlais 在 workflow 里写死为 `betterzuikey.sign`（同一套签名配置 /
 
 **版号与 tag（模仿 BZK）**
 
-- 版本写在 `app/build.gradle.kts` 的 `versionCode` / `versionName`（当前 `2` / `1.1.0`）；
+- 版本写在 `app/build.gradle.kts` 的 `versionCode` / `versionName`；
 - APK 命名：`BetterZUIKey-SougouOEMExt-v<versionName>.apk`；
-- LSPosed 镜像 tag：`<versionCode>-<versionName>`（当前 `2-1.1.0`）。
+- LSPosed 镜像 tag：`<versionCode>-<versionName>`。
 
 > nightly 那个 workflow 是按 BZK 原样镜像的（`dev` + `[Nightly]` 前缀）；本仓库目前只有 `main`，
 > 想让它跑就需要建一个 `dev` 分支。
