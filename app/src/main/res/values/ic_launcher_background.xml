@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标的背景层：取源图的白色底，前景（斜置橙方 + 角色）居中压在它上面 -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>
