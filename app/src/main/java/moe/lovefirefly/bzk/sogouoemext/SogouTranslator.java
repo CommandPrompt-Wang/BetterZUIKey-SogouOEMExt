@@ -88,6 +88,12 @@ public final class SogouTranslator {
     /** 功能 9 的状态位（由 Ctrl+Shift+9 临时切换并持久化）。 */
     private static volatile Boolean sPhysState;
 
+    /** 功能「完整的 …… 和 ——」：UI 开关（默认开）。 */
+    private static volatile boolean sLongMarks = true;
+
+    /** 该功能的状态位（当前是"两个"还是"一个"，由 Ctrl+Shift+0 切换并持久化）。 */
+    private static volatile Boolean sLongState;
+
     /** 标记"这次语言命令是本模块发起的"，守卫据此放行。 */
     private static final ThreadLocal<Boolean> sOurs = new ThreadLocal<Boolean>() {
         @Override protected Boolean initialValue() { return Boolean.FALSE; }
@@ -195,6 +201,9 @@ public final class SogouTranslator {
     private static final String STATE_PREFS = "sogouoemext_state";
     private static final String KEY_FULL = "fullwidth";
     private static final String KEY_MODE_EN = "enPunct";
+
+    /** 「完整的 …… 和 ——」的状态位（true = 各两个）。 */
+    private static final String KEY_LONG_STATE = "longMarks";
 
     private static volatile Boolean sFull;
     private static volatile Boolean sModeEn;
@@ -313,6 +322,23 @@ public final class SogouTranslator {
             final android.content.SharedPreferences sp = statePrefs();
             v = sp == null || sp.getBoolean("physComplete", true);   // 默认开：开箱即用
             sPhysState = v;
+        }
+        return v;
+    }
+
+    /**
+     * 功能「完整的 …… 和 ——」当前是否生效 = 功能开关开 && 状态位为真。
+     *
+     * <p>状态位不在 UI 上，由 Ctrl+Shift+0 临时切换并持久化（同全角/中英标点那套）。
+     * 默认开 → 开箱即用就是完整形 {@code ——} / {@code ……}。
+     */
+    static boolean longMarksActive() {
+        if (!sLongMarks) return false;             // 功能开关关 → 忽略状态位（原样放行）
+        Boolean v = sLongState;
+        if (v == null) {
+            final android.content.SharedPreferences sp = statePrefs();
+            v = sp == null || sp.getBoolean(KEY_LONG_STATE, true);   // 默认开：完整形
+            sLongState = v;
         }
         return v;
     }
@@ -467,6 +493,12 @@ public final class SogouTranslator {
                                     && sLastCommittedChar >= '0' && sLastCommittedChar <= '9') {
                                 if ("。".equals(out)) out = ".";
                                 else if ("）".equals(out)) out = ")";
+                            }
+                            // 「完整的 …… 和 ——」：中文标点这一侧才有意义（英文态/英文标点不碰）
+                            if (cfg.longMarks && !slashHandled
+                                    && !(currentEnPunct() || english)) {
+                                final String lm = PunctPipeline.toLongMarks(out, longMarksActive());
+                                if (lm != null) out = lm;
                             }
                             // 形式层：全角 / 半角
                             final boolean full = currentFullWidth();
@@ -624,6 +656,18 @@ public final class SogouTranslator {
                                 }
                                 return true;
                             }
+                            // Ctrl+Shift+0 → 「完整的 …… 和 ——」的状态位（功能开关之下的临时开关）
+                            if (kc2 == KeyEvent.KEYCODE_0 && ctrl && shift) {
+                                if (down && kev.getRepeatCount() == 0) {
+                                    final boolean nv = !longMarksActive();
+                                    sLongState = nv;
+                                    final android.content.SharedPreferences sp = statePrefs();
+                                    if (sp != null) sp.edit().putBoolean(KEY_LONG_STATE, nv).apply();
+                                    Log.i(TAG, "hotkey Ctrl+Shift+0 -> longMarks=" + nv + " (saved)");
+                                    banner("完整标点：" + (nv ? "开（—— ……）" : "关（— …）"));
+                                }
+                                return true;
+                            }
                         }
                         if (!sStrict) return chain.proceed();
                         final Object kcArg = chain.getArg(0);
@@ -714,6 +758,7 @@ public final class SogouTranslator {
         sAutoPair = cfg.autoPair;
         sPairMap = cfg.pairMap;
         sPhysComplete = cfg.physComplete;
+        sLongMarks = cfg.longMarks;
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
         // （否则 sStrict 永远停在会话启动时读到的那个值）
         final boolean strictNow = BridgeHook.ENABLE_STRICT && cfg.strict;

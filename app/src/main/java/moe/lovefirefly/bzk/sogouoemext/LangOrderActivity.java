@@ -64,6 +64,7 @@ public class LangOrderActivity extends AppCompatActivity {
     private MaterialSwitch fullSwitch;
     private MaterialSwitch enSwitch;
     private MaterialSwitch numSwitch;
+    private MaterialSwitch longSwitch;
     private MaterialSwitch capSwitch;
     private MaterialSwitch autoPairSwitch;
     private MaterialSwitch physPairSwitch;
@@ -175,7 +176,8 @@ public class LangOrderActivity extends AppCompatActivity {
                 .TextAppearance_Material3_BodySmall);
         hotkeyHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
         hotkeyHint.setText("当前状态（快捷键切换，自动记住，不在界面显示）："
-                + "Shift+Space 全角/半角，Ctrl+. 中文标点/英文标点");
+                + "Shift+Space 全角/半角，Ctrl+. 中文标点/英文标点，"
+                + "Ctrl+Shift+9 物理补全，Ctrl+Shift+0 完整标点");
         hotkeyHint.setPadding(0, 0, 0, pad / 2);
         strictBox.addView(hotkeyHint);
 
@@ -186,6 +188,11 @@ public class LangOrderActivity extends AppCompatActivity {
         numSwitch = addSwitch(strictBox, "智能编号",
                 "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
                 + "只作用于紧跟数字的那一下，后续字符照常");
+
+        longSwitch = addSwitch(strictBox, "完整的 …… 和 ——",
+                "开启：破折号/省略号各出两个 —— 和 ……（中文排版标准）；"
+                + "关闭：各出一个 — 和 …（搜狗原生就是这样）。\n"
+                + "快捷键 Ctrl+Shift+0 可临时切换。");
 
         // S：软键盘补全（搜狗原生行为，模块只做开关）
         autoPairSwitch = addSwitch(strictBox, "引号/括号自动补全",
@@ -372,6 +379,7 @@ public class LangOrderActivity extends AppCompatActivity {
         bindBoolSwitch(fullSwitch, "fullwidth", cfg.fullwidth);
         bindBoolSwitch(enSwitch, "enPunct", cfg.enPunct);
         bindBoolSwitch(numSwitch, "smartNumbering", cfg.smartNumbering);
+        bindBoolSwitch(longSwitch, "longMarks", cfg.longMarks);
         bindBoolSwitch(capSwitch, "capitalInPinyin", cfg.capitalInPinyin);
         bindBoolSwitch(autoPairSwitch, "autoPair", cfg.autoPair);
         bindBoolSwitch(physPairSwitch, "physComplete", cfg.physComplete);

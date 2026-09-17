@@ -165,17 +165,19 @@ strict: blocked native switch key KEYCODE_SHIFT_LEFT
 
 | 层 | 内容 | 位置 | 默认 |
 |---|---|---|---|
-| **功能开关** | 智能中文标点、全角模式、中英文标点、智能编号；下拉「原样输出斜杠」 | App 界面（写本机 prefs） | 全开（斜杠=关） |
+| **功能开关** | 智能中文标点、全角模式、中英文标点、智能编号、完整的 …… 和 ——；下拉「原样输出斜杠」 | App 界面（写本机 prefs） | 全开（斜杠=关） |
 
 > 下拉与 BZK 同款：`TextInputLayout`（`hintEnabled=false` + `endIconMode=dropdown_menu` +
 > `boxBackgroundColor=?attr/colorSurfaceContainerHighest`）+ `MaterialAutoCompleteTextView`
 > （`inputType=none`）+ `res/layout/dropdown_item_wrap.xml` 条目。
-| **状态位** | 当前是**全角还是半角**、**中文还是英文标点** | **不在界面**：模块自己的 SharedPreferences（搜狗进程 `sogouoemext_state`），快捷键切换并立即落盘 | 半角 + 中文标点 |
+| **状态位** | 当前是**全角还是半角**、**中文还是英文标点**、破折号/省略号是**一个还是两个** | **不在界面**：模块自己的 SharedPreferences（搜狗进程 `sogouoemext_state`），快捷键切换并立即落盘 | 半角 + 中文标点 + 完整形（两个） |
 
 - `Shift+Space` → 全角 / 半角（切完弹横幅，状态持久化）
 - `Ctrl+.` → 中文标点 / 英文标点（同上）
-- 两个快捷键在这台 OEM 上**没有任何原生行为**（实测无命令追踪、提交内容不变），所以由模块在按键层接管
-- 功能开关关闭时对应状态位被忽略：全角模式关 → 恒半角；中英文标点关 → 恒中文标点
+- `Ctrl+Shift+0` → 「完整的 …… 和 ——」：两个 / 一个（同上）
+- 三个快捷键在这台 OEM 上**没有任何原生行为**（实测无命令追踪、提交内容不变），所以由模块在按键层接管
+- 功能开关关闭时对应状态位被忽略：全角模式关 → 恒半角；中英文标点关 → 恒中文标点；
+  「完整的 …… 和 ——」关 → 破折号/省略号**原样放行**（搜狗原生就是各一个）
 
 **管线顺序**（语义层决定"是哪个字符"，形式层决定"宽窄"）：
 
@@ -184,6 +186,7 @@ strict: blocked native switch key KEYCODE_SHIFT_LEFT
   → 英文输入态 或 英文标点状态位 ? ASCII
       : 智能中文标点开 ? 中文标点映射 : 原样
   → 智能编号（数字后的 。/） → 半角 . )）
+  → 完整的 …… 和 ——（只在中文标点这一侧：— / … 的连续段归一成 1 或 2 个）
   → 全角模式状态位 ? 全角 : 半角
 ```
 
@@ -204,6 +207,13 @@ CHINESE: ，。、、；：！？（）【】《》“‘＋－＊＝｛｝｜�
 
 **形式层只动 ASCII ↔ FF01–FF5E，且排除 `！？；：，（）`** —— 那些由语义层负责，
 否则"半角"会把中文标点也拉成 ASCII，等于绕开语义层的决定。
+
+**「完整的 …… 和 ——」**（`longMarks`，默认开）：搜狗原生破折号/省略号**各一个**
+（`—` U+2014、`…` U+2026），中文排版标准的完整形是**各两个**。所以开启时把
+`—`/`…` 的**连续段**归一成 2 个，关闭时归一成 1 个 —— 用"段"而不是"逐字符翻倍"
+是为了**幂等**：一次提交里已经有两个（连续两下都进了同一段）不会被翻成四个。
+只在中文标点这一侧生效（英文输入态 / 英文标点状态位下原样放行）；命中才新建
+StringBuilder，没命中返回 `null` 零额外分配。与 Gboard 侧 `SymbolNorm` 的语义一致。
 
 **实现位置**：`android.inputmethodservice.RemoteInputConnection#commitText/setComposingText`
 （IME 进程内，用 libxposed 的 `Chain.proceed(Object[])` 替换参数）；按键在 `coa#onKeyDown/onKeyUp`。
@@ -434,6 +444,11 @@ synchronized(ImfLock) {
 > **不能**像早期纯 Java 版那样把 `kotlin-stdlib` 排除掉，否则一启动就
 > `RuntimeException: Unable to get provider androidx.startup.InitializationProvider`。
 > 想压体积就用 release + R8（`minifyEnabled`），或把界面改成自绘卡片。
+
+**纯逻辑单测（不碰设备）**：`proj/sogou-jvmtest/run.sh` —— 把 `PunctPipeline` / `LangConfig`
+连同 android.jar 与 libxposed 的 api aar 用 `javac` 编到 JVM 上跑（`SharedPreferences`
+用动态代理造假、`ConfigProvider` 用替身），覆盖标点管线与**配置键往返**。
+改这两个文件后先跑它：`dump` / `parseDump` 键名写歪这类 bug（历史上真踩过）在这里就拦住。
 
 ### 图标资源（自适应图标）
 

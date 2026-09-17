@@ -32,6 +32,10 @@ final class PunctPipeline {
     private static final String SPECIAL_CN = "·｀";
     private static final String SPECIAL_ASCII = "``";
 
+    /** 破折号 / 省略号：中文排版标准的"完整形"是各两个（搜狗原生各一个）。 */
+    static final char DASH = '\u2014';
+    static final char ELLIPSIS = '\u2026';
+
     private PunctPipeline() {}
 
     /** 启动自检：两张表长度一致，且每一对都能双向对上（防手滑写错顺序）。 */
@@ -94,6 +98,38 @@ final class PunctPipeline {
             changed = true;
         }
         return changed ? sb.toString() : null;
+    }
+
+    /**
+     * 「完整的 …… 和 ——」：把 {@code —} 与 {@code …} 的**连续段**归一成 1 个或 2 个。
+     *
+     * <p>{@code full=true} = 中文排版标准的完整形（{@code ——} / {@code ……}），
+     * {@code false} = 各一个（搜狗原生的行为）。用"段"而不是"逐字符翻倍"是为了<b>幂等</b>：
+     * 一次提交里已经有 {@code ……}（连续两下都进了同一段）时，开启态下不会被翻成四个。
+     *
+     * <p>没命中（一个字节都不用改）返回 {@code null}，调用方原样放行。
+     */
+    static String toLongMarks(CharSequence src, boolean full) {
+        if (src == null || src.length() == 0) return null;
+        final int want = full ? 2 : 1;
+        StringBuilder sb = null;                     // 命中才建 Builder（零额外分配路径）
+        for (int i = 0; i < src.length(); i++) {
+            final char c = src.charAt(i);
+            if (c != DASH && c != ELLIPSIS) {
+                if (sb != null) sb.append(c);
+                continue;
+            }
+            int n = 0;
+            while (i + n < src.length() && src.charAt(i + n) == c) n++;
+            i += n - 1;
+            if (sb == null) {
+                if (n == want) continue;             // 已经是目标形态：不需要改动
+                sb = new StringBuilder(src.length() + 1);
+                sb.append(src, 0, i - n + 1);
+            }
+            for (int k = 0; k < want; k++) sb.append(c);
+        }
+        return sb == null ? null : sb.toString();
     }
 
     /**
