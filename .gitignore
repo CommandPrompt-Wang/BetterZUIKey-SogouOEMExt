@@ -27,3 +27,6 @@ lspd.db*
 chk.db*
 *.db-shm
 *.db-wal
+
+# 逆向取样：从设备抓下来的搜狗 MMKV 转储（含用户数据，只留本地）
+mmkv/
