@@ -17,7 +17,7 @@ import io.github.libxposed.api.XposedModule;
  */
 final class SogouStateWatch {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
     private static final long PERIOD_MS = 500;
     private static final int MAX_SAMPLES = 600;
 

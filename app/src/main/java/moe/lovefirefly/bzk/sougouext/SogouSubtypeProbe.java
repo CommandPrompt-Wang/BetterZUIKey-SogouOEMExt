@@ -24,7 +24,7 @@ import io.github.libxposed.api.XposedModule;
  */
 final class SogouSubtypeProbe {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
     private static volatile boolean sDone;
 
     private SogouSubtypeProbe() {}

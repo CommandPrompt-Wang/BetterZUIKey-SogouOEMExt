@@ -29,7 +29,7 @@ import io.github.libxposed.api.XposedModule;
  */
 public final class SogouSchemeProbe {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
     private static final int EVENT_PINYIN = 1002;
     private static final int EVENT_WUBI = 1005;
     private static volatile boolean sDone;

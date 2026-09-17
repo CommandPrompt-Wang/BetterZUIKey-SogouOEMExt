@@ -21,7 +21,7 @@ import io.github.libxposed.api.XposedModule;
  */
 final class SogouPunctProbe {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
 
     private SogouPunctProbe() {}
 

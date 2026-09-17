@@ -45,7 +45,7 @@ import io.github.libxposed.api.XposedModule;
  */
 public final class SogouTranslator {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
 
     /** 硬键盘语言命令的类名（枚举注册表时按此匹配，避免写死 id）。 */
     private static final String CMD_CLASS_ZH_TO_EN = "cta";   // SwitchChineseEnglishWuBi

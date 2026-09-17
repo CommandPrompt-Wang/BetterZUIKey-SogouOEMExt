@@ -24,7 +24,7 @@ import androidx.annotation.Nullable;
  */
 public class ConfigProvider extends ContentProvider {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
     private static final String SELF_PKG = "moe.lovefirefly.bzk.sougouext";
     private static final String SOGOU_PKG = "com.sohu.inputmethod.sogou.oem";
 
@@ -49,7 +49,7 @@ public class ConfigProvider extends ContentProvider {
                 .getSharedPreferences(LangConfig.PREFS_NAME, Context.MODE_PRIVATE);
         final MatrixCursor c = new MatrixCursor(new String[]{COLUMN});
         c.addRow(new Object[]{LangConfig.dump(sp)});
-        android.util.Log.i("SogouOemBridge", "provider: dump self-check = "
+        android.util.Log.i("BZK-SogouOEMExt", "provider: dump self-check = "
                 + LangConfig.dumpRoundTripCheck(sp));
         return c;
     }

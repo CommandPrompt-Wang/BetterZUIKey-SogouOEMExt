@@ -380,7 +380,7 @@ synchronized(ImfLock) {
 1. 装模块 APK，LSPosed 作用域勾 `com.sohu.inputmethod.sogou.oem`（**不需要** system 作用域）。
 2. 打开模块 App → **设置语言顺序 / 暴露哪些 subtype** → 拖好顺序和分隔线。
 3. 弹出一次键盘（配置在键盘起来后 500ms 应用，避免打断 IME 初始化）。
-4. 日志：`adb shell logcat -s SogouOemBridge`
+4. 日志：`adb shell logcat -s BZK-SogouOEMExt`
 
    ```
    config -> wubi,pinyin,en|2 | applied rotation=[wubi, pinyin] (was [pinyin, wubi])

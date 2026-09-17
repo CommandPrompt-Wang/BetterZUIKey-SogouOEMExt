@@ -21,7 +21,7 @@ import io.github.libxposed.api.XposedModule;
  */
 final class LangConfig {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
     static final String GROUP = "sogou_lang";
 
     /** App 侧本地配置文件名（模块通过 ContentProvider 读取，不依赖 LSPosed 服务）。 */

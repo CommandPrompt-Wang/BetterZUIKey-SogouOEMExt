@@ -28,7 +28,7 @@ import java.util.List;
  */
 public final class SubtypeInjector {
 
-    public static final String TAG = "SogouOemBridge";
+    public static final String TAG = "BZK-SogouOEMExt";
     private static final String SERVICE_ACTION = "android.view.InputMethod";
     private static final String IME_PERMISSION = "android.permission.BIND_INPUT_METHOD";
 

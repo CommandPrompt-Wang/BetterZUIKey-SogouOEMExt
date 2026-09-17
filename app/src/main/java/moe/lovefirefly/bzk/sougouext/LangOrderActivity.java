@@ -38,7 +38,7 @@ import java.util.List;
  */
 public class LangOrderActivity extends AppCompatActivity {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
 
     private static final int TYPE_LANG = 0;
     private static final int TYPE_DIVIDER = 1;

@@ -130,7 +130,7 @@ cd BetterZUIKey-SogouOEMExt
 日志：
 
 ```bash
-adb shell logcat -s SogouOemBridge
+adb shell logcat -s BZK-SogouOEMExt
 
 config -> wubi,pinyin,en|2 | applied rotation=[wubi, pinyin] (was [pinyin, wubi])
 sync marker: real=en cur=null -> want=pinyin

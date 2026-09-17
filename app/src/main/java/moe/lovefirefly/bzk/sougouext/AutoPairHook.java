@@ -34,7 +34,7 @@ import io.github.libxposed.api.XposedModule;
  */
 final class AutoPairHook {
 
-    private static final String TAG = "SogouOemBridge";
+    private static final String TAG = "BZK-SogouOEMExt";
 
     private static volatile boolean sGateInstalled;
     private static volatile boolean sTableInstalled;
