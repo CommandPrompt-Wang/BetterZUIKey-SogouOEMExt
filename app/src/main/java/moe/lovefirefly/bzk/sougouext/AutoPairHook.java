@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * 功能 S：引号/括号自动关闭。
+ * 功能 S：引号/括号自动补全。
  *
  * <p>搜狗的自动配对只有<b>一个咽喉点</b>（4 条调用路径 —— {@code UU}/{@code WU}/{@code YU}/{@code bV}
  * 的 {@code d(...)} —— 全部汇聚到它）：

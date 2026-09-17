@@ -188,7 +188,7 @@ public class LangOrderActivity extends AppCompatActivity {
                 + "只作用于紧跟数字的那一下，后续字符照常");
 
         // S：软键盘补全（搜狗原生行为，模块只做开关）
-        autoPairSwitch = addSwitch(strictBox, "引号/括号自动关闭",
+        autoPairSwitch = addSwitch(strictBox, "引号/括号自动补全",
                 "软键盘：关闭后打引号、括号不再自动补另一半（只出单个字符）。");
 
         // 9：物理键盘补全（模块自己注入）—— 与 S 各自独立，共用同一份匹配列表

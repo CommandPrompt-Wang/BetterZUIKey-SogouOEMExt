@@ -36,7 +36,7 @@ final class LangConfig {
     private static final String KEY_SLASH_MODE = "slashMode";
     private static final String KEY_CAPITAL_PINYIN = "capitalInPinyin";
 
-    /** 功能 S：引号/括号自动关闭（true=保留自动补另一半，false=禁用）。 */
+    /** 功能 S：引号/括号自动补全（true=保留自动补另一半，false=禁用）。 */
     private static final String KEY_AUTO_PAIR = "autoPair";
 
     /** 功能 9：物理键盘自动补全（true = 打字即补另一半）。 */
@@ -93,13 +93,13 @@ final class LangConfig {
     /** 功能：中文态下大写字母也进拼音串（利用候选/英文补全），默认开。 */
     final boolean capitalInPinyin;
 
-    /** 功能 S：引号/括号自动关闭，默认开（= 保留搜狗原生配对）。关掉即 not(S) 生效：只出单字符。 */
+    /** 功能 S：引号/括号自动补全，默认关（= 拿掉搜狗原生配对）。打开才补另一半。 */
     final boolean autoPair;
 
     /** 功能 S 的自定义配对串（相邻两字符一组）；空串 = 使用输入法默认匹配规则。 */
     final String autoPairTable;
 
-    /** 功能 9：物理键盘自动补全，默认开。 */
+    /** 功能 9：物理键盘自动补全，默认关。 */
     final boolean physComplete;
 
     /**
@@ -165,9 +165,9 @@ final class LangConfig {
             final boolean smartNumbering = sp.getBoolean(KEY_SMART_NUMBERING, true);
             final int slashMode = sp.getInt(KEY_SLASH_MODE, 0);
             final boolean capitalInPinyin = sp.getBoolean(KEY_CAPITAL_PINYIN, true);
-            final boolean autoPair = sp.getBoolean(KEY_AUTO_PAIR, true);
+            final boolean autoPair = sp.getBoolean(KEY_AUTO_PAIR, false);
             final String autoPairTable = sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE);
-            final boolean physComplete = sp.getBoolean(KEY_PHYS_COMPLETE, true);
+            final boolean physComplete = sp.getBoolean(KEY_PHYS_COMPLETE, false);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
                     slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete);
         } catch (Throwable err) {
@@ -188,8 +188,8 @@ final class LangConfig {
                 + "&" + KEY_SMART_NUMBERING + "=" + sp.getBoolean(KEY_SMART_NUMBERING, true)
                 + "&" + KEY_SLASH_MODE + "=" + sp.getInt(KEY_SLASH_MODE, 0)
                 + "&" + KEY_CAPITAL_PINYIN + "=" + sp.getBoolean(KEY_CAPITAL_PINYIN, true)
-                + "&" + KEY_AUTO_PAIR + "=" + sp.getBoolean(KEY_AUTO_PAIR, true)
-                + "&" + KEY_PHYS_COMPLETE + "=" + sp.getBoolean(KEY_PHYS_COMPLETE, true)
+                + "&" + KEY_AUTO_PAIR + "=" + sp.getBoolean(KEY_AUTO_PAIR, false)
+                + "&" + KEY_PHYS_COMPLETE + "=" + sp.getBoolean(KEY_PHYS_COMPLETE, false)
                 // 配对串里可能出现 & 或 =，必须转义，否则会破坏 k=v&k=v 的行格式
                 + "&" + KEY_AUTO_PAIR_TABLE + "=" + encodeTable(
                         sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE));
@@ -221,15 +221,15 @@ final class LangConfig {
             String order = LangSpec.DEFAULT_ORDER;
             int divider = LangSpec.DEFAULT_DIVIDER;
             boolean strict = false;
-            boolean full = false;
+            boolean full = true;
             boolean smart = true;
-            boolean en = false;
+            boolean en = true;
             boolean num = true;
             int slash = 0;
             boolean capital = true;
-            boolean autoPair = true;
+            boolean autoPair = false;
             String autoPairTable = SUGGEST_PAIR_TABLE;
-            boolean physComplete = true;
+            boolean physComplete = false;
             for (String kv : s.split("&")) {
                 final int i = kv.indexOf('=');
                 if (i <= 0) continue;
@@ -316,7 +316,7 @@ final class LangConfig {
 
     static LangConfig defaults() {
         return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
-                false, false, true, false, true, 0, true, true, SUGGEST_PAIR_TABLE, true);
+                false, true, true, true, true, 0, true, false, SUGGEST_PAIR_TABLE, false);
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */

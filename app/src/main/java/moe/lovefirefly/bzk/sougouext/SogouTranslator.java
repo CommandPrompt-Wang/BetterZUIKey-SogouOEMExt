@@ -75,7 +75,7 @@ public final class SogouTranslator {
      */
     private static volatile boolean sStrict;
 
-    /** 功能 S：引号/括号自动关闭（默认开）。hook 可能在任何线程被调用，故单独存字段。 */
+    /** 功能 S：引号/括号自动补全（默认关）。hook 可能在任何线程被调用，故单独存字段。 */
     private static volatile boolean sAutoPair = true;
 
     /** 功能 S/9 共用的配对表：开字符 → 闭字符（空表 = 用输入法默认匹配规则）。 */
