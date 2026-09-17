@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "SogouOemBridge"
+rootProject.name = "BetterZUIKey-SogouOEMExt"
 include(":app")

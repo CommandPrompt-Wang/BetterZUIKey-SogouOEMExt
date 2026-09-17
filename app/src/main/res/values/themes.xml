@@ -1,4 +1,4 @@
 <resources>
     <!-- 与 BZK 同一套：Material 3 DayNight、无 ActionBar（标题自己画） -->
-    <style name="Theme.SogouOemBridge" parent="Theme.Material3.DayNight.NoActionBar" />
+    <style name="Theme.BetterZUIKeySogouOEMExt" parent="Theme.Material3.DayNight.NoActionBar" />
 </resources>

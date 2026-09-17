@@ -9,7 +9,7 @@
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
-        android:theme="@style/Theme.SogouOemBridge"
+        android:theme="@style/Theme.BetterZUIKeySogouOEMExt"
         android:description="@string/module_desc"
         android:allowBackup="false">
 
