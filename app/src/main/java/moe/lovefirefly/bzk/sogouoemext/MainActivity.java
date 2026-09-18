@@ -301,7 +301,7 @@ public class MainActivity extends AppCompatActivity {
                     ? cfgPrefs.getBoolean(wantKey, statusDefault)
                     : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                             .getBoolean(statusKey, statusDefault);
-            tv.setText(hintPrefix + "\t当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
+            tv.setText(hintPrefix + "\n当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
         };
         statusRefreshers.add(refresh);
         refresh.run();
