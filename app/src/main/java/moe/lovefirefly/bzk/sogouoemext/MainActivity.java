@@ -15,9 +15,6 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
-import androidx.recyclerview.widget.ItemTouchHelper;
-import androidx.recyclerview.widget.LinearLayoutManager;
-import androidx.recyclerview.widget.RecyclerView;
 
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.floatingactionbutton.ExtendedFloatingActionButton;
@@ -28,36 +25,24 @@ import java.util.List;
 
 
 /**
- * 首页：语言顺序（可拖拽的顺序 + 可拖拽的分隔线）。
+ * 模块首页（设置页）。
  *
- * <p><b>分隔线上方</b>的语言会被模块做成 subtype 暴露给框架（顺序即框架列表顺序 ——
- * 也就是 BZK 的默认轮转顺序；BZK 若给这个输入法单独排过顺序则以 BZK 那份为准）；
- * <b>下方</b>的不做成 subtype，只能从搜狗键盘手动切；从下方切出时回到上方第一项。
+ * <p>语言部分**只有勾选**：每个语言一个 checkbox = 是否把它做成 subtype **暴露给框架**。
+ * 未勾选的语言不进 subtype 列表，BZK / 系统框架都切不到，只能从搜狗键盘手动切。
  *
- * <p>视觉与交互跟 BZK 的应用模板列表一致：Material 3 主题、MaterialCardView 行、
- * RecyclerView + ItemTouchHelper 长按拖动、拖动时 elevation/scale 反馈、松手才落盘。
+ * <p><b>顺序不在这里排</b> —— 轮转顺序归 BZK（BZK → 输入法适配管理 → 长按这条输入法拖动排序）。
+ * 这里只决定"哪些语言能被切到"。存储格式仍是 order + divider（暴露的排前面），
+ * 所以新旧模块代码读到的语义一致 —— 改这个页面**不需要重启**。
  */
-public class LangOrderActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "BZK-SogouOEMExt";
 
-    private static final int TYPE_LANG = 0;
-    private static final int TYPE_DIVIDER = 1;
-
-    private static final class Entry {
-        final int type;
-        final String lang;
-
-        Entry(int type, String lang) {
-            this.type = type;
-            this.lang = lang;
-        }
-    }
-
     private static final String BZK_PKG = "moe.lovefirefly.betterzuikey";
 
-    private final List<Entry> items = new ArrayList<>();
-    private Adapter adapter;
+    /** 勾选中的语言（= 暴露为 subtype 的那批）。顺序不在这里 —— 顺序归 BZK。 */
+    private final java.util.Set<String> exposure = new java.util.LinkedHashSet<>();
+    private LinearLayout langBox;
     private TextView hint;
     private MaterialSwitch strictSwitch;
     private TextView strictHint;
@@ -95,15 +80,10 @@ public class LangOrderActivity extends AppCompatActivity {
         hint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
         hint.setPadding(pad * 2, 0, pad * 2, pad / 2);
 
-        final RecyclerView rv = new RecyclerView(this);
-        rv.setLayoutManager(new LinearLayoutManager(this));
-        rv.setClipToPadding(false);
-        rv.setPadding(0, pad / 2, 0, pad / 2);
-        // 整页可滚动：列表按内容高度撑开，自身不滚动（3 项，拖动仍可用）
-        rv.setNestedScrollingEnabled(false);
-        adapter = new Adapter();
-        rv.setAdapter(adapter);
-        attachDrag(rv);
+        // 语言部分：只有勾选（每个语言一行 MaterialCheckBox）
+        langBox = new LinearLayout(this);
+        langBox.setOrientation(LinearLayout.VERTICAL);
+        langBox.setPadding(0, pad / 2, 0, pad / 2);
 
         final LinearLayout strictBox = new LinearLayout(this);
         strictBox.setOrientation(LinearLayout.VERTICAL);
@@ -227,7 +207,7 @@ public class LangOrderActivity extends AppCompatActivity {
         content.setOrientation(LinearLayout.VERTICAL);
         content.addView(title);
         content.addView(hint);
-        content.addView(rv, new LinearLayout.LayoutParams(
+        content.addView(langBox, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(strictBox);
 
@@ -243,7 +223,7 @@ public class LangOrderActivity extends AppCompatActivity {
 
         bindStrictSwitch(false);
         bindPunctSwitches(LangConfig.defaults());
-        rebuildFromModel(LangConfig.defaultOrder(), LangSpec.DEFAULT_DIVIDER);
+        rebuildFromModel(LangConfig.defaults().exposed());
 
         // 配置存在本机（模块通过 ContentProvider 读取），不需要任何框架服务
         prefs = getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
@@ -255,7 +235,7 @@ public class LangOrderActivity extends AppCompatActivity {
             android.util.Log.i(TAG, "UI: seed strict=" + bzk + " (first run)");
         }
         final LangConfig cfg0 = LangConfig.load(prefs);
-        rebuildFromModel(cfg0.order, cfg0.divider);
+        rebuildFromModel(cfg0.exposed());
         bindStrictSwitch(cfg0.strict);
         bindPunctSwitches(cfg0);
 
@@ -468,182 +448,29 @@ public class LangOrderActivity extends AppCompatActivity {
     }
 
     // ------------------------------------------------------------------
-    // 模型 ↔ 列表
+    // 模型：只有"暴露 / 不暴露"—— 顺序归 BZK
     // ------------------------------------------------------------------
 
-    private void rebuildFromModel(List<String> order, int divider) {
-        items.clear();
-        for (int i = 0; i < order.size(); i++) {
-            if (i == divider) items.add(new Entry(TYPE_DIVIDER, null));
-            items.add(new Entry(TYPE_LANG, order.get(i)));
+    /** 按配置重建勾选列表（行顺序固定用 {@link LangSpec#ALL}，与轮转顺序无关）。 */
+    private void rebuildFromModel(List<String> exposedIds) {
+        exposure.clear();
+        if (exposedIds != null) {
+            for (String id : exposedIds) {
+                if (LangSpec.ALL.contains(id)) exposure.add(id);
+            }
         }
-        if (divider >= order.size()) items.add(new Entry(TYPE_DIVIDER, null));
-        if (adapter != null) adapter.notifyDataSetChanged();
+        if (langBox != null) {
+            langBox.removeAllViews();
+            for (String id : LangSpec.ALL) langBox.addView(langRow(id, exposure.contains(id)));
+        }
         updateHint();
     }
 
-    private void save() {
-        if (prefs == null) {
-            android.util.Log.w(TAG, "UI: order save ignored, xposed service not bound");
-            Toast.makeText(this, "Xposed 服务未连接，改动未保存（请重开本 App 再试）",
-                    Toast.LENGTH_LONG).show();
-            return;
-        }
-        final List<String> order = new ArrayList<>();
-        int divider = 0;
-        boolean seenDivider = false;
-        for (Entry e : items) {
-            if (e.type == TYPE_DIVIDER) {
-                seenDivider = true;
-            } else {
-                order.add(e.lang);
-                if (!seenDivider) divider++;
-            }
-        }
-        prefs.edit()
-                .putString("order", String.join(",", order))
-                .putInt("divider", divider)
-                .apply();
-        sendConfigPoke();
-        Toast.makeText(this, "已保存（立即生效）", Toast.LENGTH_SHORT).show();
-    }
-
-    private void updateHint() {
-        final List<String> labels = new ArrayList<>();
-        final List<String> aboveIds = new ArrayList<>();
-        int divider = 0;
-        boolean seen = false;
-        for (Entry e : items) {
-            if (e.type == TYPE_DIVIDER) {
-                seen = true;
-            } else {
-                labels.add(LangSpec.label(e.lang));
-                if (!seen) {
-                    aboveIds.add(e.lang);
-                    divider++;
-                }
-            }
-        }
-        final StringBuilder sb = new StringBuilder();
-        sb.append("长按拖动排序；分隔线自己也能拖。\n");
-        sb.append("上方（暴露为 subtype，框架列表按这个顺序；BZK 没给这个输入法单独排过 → 轮转就按它）：")
-                .append(divider == 0 ? "（空）" : String.join(" → ", labels.subList(0, divider)))
-                .append('\n');
-        sb.append("下方（不暴露，只能手动切）：")
-                .append(divider >= labels.size() ? "（空）"
-                        : String.join("、", labels.subList(divider, labels.size())));
-        sb.append("\n\n轮转由 BZK 执行（本模块只负责让框架看见这些 subtype）。")
-                .append("要单独改轮转顺序：BZK → 输入法适配管理 → 长按这条输入法。");
-        if (aboveIds.contains(LangSpec.PINYIN) && aboveIds.contains(LangSpec.WUBI)) {
-            sb.append("\n\n注意：拼音和五笔都是中文方案，而搜狗软键盘只有中/英"
-                    + "（五笔仅物理键盘带工具栏时可用）。"
-                    + "两个中文方案同时放在上方时，在软键盘上按快捷键会看不出变化。");
-        }
-        hint.setText(sb.toString());
-    }
-
-    private int dividerIndex() {
-        for (int i = 0; i < items.size(); i++) {
-            if (items.get(i).type == TYPE_DIVIDER) return i;
-        }
-        return items.size();
-    }
-
-    // ------------------------------------------------------------------
-    // 拖动（与 BZK 的模板列表同一套）
-    // ------------------------------------------------------------------
-
-    private void attachDrag(RecyclerView rv) {
-        final ItemTouchHelper helper = new ItemTouchHelper(
-                new ItemTouchHelper.SimpleCallback(
-                        ItemTouchHelper.UP | ItemTouchHelper.DOWN, 0) {
-                    @Override
-                    public boolean onMove(@NonNull RecyclerView view,
-                            @NonNull RecyclerView.ViewHolder src,
-                            @NonNull RecyclerView.ViewHolder target) {
-                        final int from = src.getAdapterPosition();
-                        final int to = target.getAdapterPosition();
-                        if (from == to || from < 0 || to < 0) return false;
-                        items.add(to, items.remove(from));
-                        adapter.notifyItemMoved(from, to);
-                        return true;
-                    }
-
-                    @Override
-                    public void onSwiped(@NonNull RecyclerView.ViewHolder holder, int direction) {
-                    }
-
-                    @Override
-                    public boolean isLongPressDragEnabled() {
-                        return true;
-                    }
-
-                    @Override
-                    public void onChildDraw(@NonNull android.graphics.Canvas canvas,
-                            @NonNull RecyclerView view, @NonNull RecyclerView.ViewHolder holder,
-                            float dX, float dY, int actionState, boolean isCurrentlyActive) {
-                        if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && isCurrentlyActive) {
-                            holder.itemView.setElevation(12f);
-                            holder.itemView.setScaleX(0.98f);
-                            holder.itemView.setScaleY(0.98f);
-                        }
-                        super.onChildDraw(canvas, view, holder, dX, dY, actionState, isCurrentlyActive);
-                    }
-
-                    @Override
-                    public void clearView(@NonNull RecyclerView view,
-                            @NonNull RecyclerView.ViewHolder holder) {
-                        holder.itemView.setElevation(0f);
-                        holder.itemView.setScaleX(1f);
-                        holder.itemView.setScaleY(1f);
-                        super.clearView(view, holder);
-                        updateHint();
-                        save();
-                    }
-                });
-        helper.attachToRecyclerView(rv);
-    }
-
-    // ------------------------------------------------------------------
-
-    private final class Adapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
-
-        @Override public int getItemViewType(int position) {
-            return items.get(position).type;
-        }
-
-        @NonNull @Override
-        public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-            if (viewType == TYPE_DIVIDER) return new Holder(dividerRow());
-            return new Holder(langRow());
-        }
-
-        @Override public void onBindViewHolder(@NonNull RecyclerView.ViewHolder h, int position) {
-            final Entry e = items.get(position);
-            final TextView name = h.itemView.findViewById(android.R.id.text1);
-            final TextView sub = h.itemView.findViewById(android.R.id.text2);
-            if (name == null || e.lang == null) return;
-            name.setText(LangSpec.label(e.lang));
-            if (sub != null) {
-                final boolean above = position < dividerIndex();
-                sub.setText(above ? "暴露为 subtype · 进入框架列表"
-                        : "不暴露 · 只能手动切（从它切出时回到上方第一项）");
-            }
-        }
-
-        @Override public int getItemCount() {
-            return items.size();
-        }
-    }
-
-    private static final class Holder extends RecyclerView.ViewHolder {
-        Holder(View v) { super(v); }
-    }
-
-    /** 一行：MaterialCardView + 拖动柄 + 标题 + 副标题（与 BZK 的 item_template_row 同构）。 */
-    private View langRow() {
-        final MaterialCardView card = new MaterialCardView(this);
-        final RecyclerView.LayoutParams lp = new RecyclerView.LayoutParams(
+    /** 一行：MaterialCardView + MaterialCheckBox；点整行也能切，改动立即落盘。 */
+    private View langRow(String id, boolean checked) {
+        final com.google.android.material.card.MaterialCardView card =
+                new com.google.android.material.card.MaterialCardView(this);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.setMargins(pad * 3 / 4, pad * 3 / 8, pad * 3 / 4, pad * 3 / 8);
         card.setLayoutParams(lp);
@@ -651,64 +478,85 @@ public class LangOrderActivity extends AppCompatActivity {
         card.setCardElevation(pad / 16f);
 
         final LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(pad * 3 / 4, pad * 3 / 4, pad * 3 / 4, pad * 3 / 4);
+        row.setOrientation(LinearLayout.VERTICAL);
+        row.setPadding(pad * 3 / 4, pad / 2, pad * 3 / 4, pad / 2);
 
-        final TextView handle = new TextView(this);
-        handle.setText("≡");
-        handle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        handle.setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary));
-        handle.setPadding(0, 0, pad * 3 / 4, 0);
-
-        final LinearLayout texts = new LinearLayout(this);
-        texts.setOrientation(LinearLayout.VERTICAL);
-
-        final TextView name = new TextView(this);
-        name.setId(android.R.id.text1);
-        name.setTextAppearance(com.google.android.material.R.style
-                .TextAppearance_Material3_TitleMedium);
+        final com.google.android.material.checkbox.MaterialCheckBox cb =
+                new com.google.android.material.checkbox.MaterialCheckBox(this);
+        cb.setText(LangSpec.label(id));
 
         final TextView sub = new TextView(this);
-        sub.setId(android.R.id.text2);
-        sub.setTextAppearance(com.google.android.material.R.style
-                .TextAppearance_Material3_BodySmall);
+        sub.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall);
         sub.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        sub.setPadding(pad * 3 / 4, 0, 0, 0);
+        sub.setText(subtitle(id, checked));
 
-        texts.addView(name);
-        texts.addView(sub);
+        cb.setChecked(checked);
+        cb.setOnCheckedChangeListener((b, isChecked) -> {
+            if (isChecked) exposure.add(id); else exposure.remove(id);
+            sub.setText(subtitle(id, isChecked));
+            updateHint();
+            save();
+        });
 
-        row.addView(handle);
-        row.addView(texts, new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(cb);
+        row.addView(sub);
         card.addView(row);
+        card.setOnClickListener(v -> cb.toggle());
         return card;
     }
 
-    /** 分隔线那一行：拖动柄 + 一条细线 + 说明（同样可拖，拖它就是在改"上/下"的分界）。 */
-    private View dividerRow() {
-        final LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setGravity(Gravity.CENTER_VERTICAL);
-        row.setPadding(pad * 3 / 4, pad * 3 / 4, pad * 3 / 4, pad * 3 / 4);
+    /** 每行副标题：勾了会怎样、没勾会怎样。 */
+    private String subtitle(String id, boolean exposedNow) {
+        if (!exposedNow) {
+            return LangSpec.WUBI.equals(id)
+                    ? "不暴露 · 框架里没有它，只能手动切（软键盘上切不到五笔）"
+                    : "不暴露 · 框架里没有它，只能从搜狗键盘手动切";
+        }
+        return "暴露为 subtype · BZK / 系统框架可以切到它";
+    }
 
-        final TextView handle = new TextView(this);
-        handle.setText("≡");
-        handle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-        handle.setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary));
-        handle.setPadding(0, 0, pad * 3 / 4, 0);
+    /**
+     * 落盘。
+     *
+     * <p><b>存储格式没变</b>：还是 `order` + `divider` —— 暴露的排前面（规范顺序），
+     * 未暴露的接在后面，`divider` = 暴露个数。这样模块侧（读 order/divider 的
+     * {@code LangConfig}）与外界看到的语义完全一致，改这个页面**不需要重启**。
+     */
+    private void save() {
+        if (prefs == null) {
+            android.util.Log.w(TAG, "UI: exposure save ignored, prefs unavailable");
+            Toast.makeText(this, "配置未就绪，改动未保存（请重开本 App 再试）",
+                    Toast.LENGTH_LONG).show();
+            return;
+        }
+        final List<String> order = new ArrayList<>();
+        for (String id : LangSpec.ALL) if (exposure.contains(id)) order.add(id);
+        for (String id : LangSpec.ALL) if (!exposure.contains(id)) order.add(id);
+        prefs.edit()
+                .putString("order", String.join(",", order))
+                .putInt("divider", exposure.size())
+                .apply();
+        sendConfigPoke();
+    }
 
-        final View line = new View(this);
-        line.setBackgroundColor(themeColor(com.google.android.material.R.attr.colorOutlineVariant));
-        row.addView(handle);
-        row.addView(line, new LinearLayout.LayoutParams(0, Math.max(1, pad / 16), 1f));
+    private void updateHint() {
+        final List<String> on = new ArrayList<>();
+        final List<String> off = new ArrayList<>();
+        for (String id : LangSpec.ALL) (exposure.contains(id) ? on : off).add(LangSpec.label(id));
 
-        final TextView tag = new TextView(this);
-        tag.setText("  以下不暴露（只能手动切）");
-        tag.setTextAppearance(com.google.android.material.R.style
-                .TextAppearance_Material3_BodySmall);
-        tag.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
-        row.addView(tag);
-        return row;
+        final StringBuilder sb = new StringBuilder();
+        sb.append("勾选 = 把这个语言做成 subtype **暴露给框架**")
+                .append("（BZK 只认 subtype，不认搜狗内部语言）。\n");
+        sb.append("已暴露：").append(on.isEmpty() ? "（空）" : String.join(" → ", on));
+        sb.append("\n未暴露：").append(off.isEmpty() ? "（空）" : String.join("、", off));
+        sb.append("\n\n顺序不在这里排 —— 轮转顺序归 BZK：")
+                .append("「输入法适配管理 → 长按这条输入法」拖动排序；这里只决定哪些语言能被切到。");
+        if (exposure.contains(LangSpec.PINYIN) && exposure.contains(LangSpec.WUBI)) {
+            sb.append("\n\n注意：拼音和五笔都是中文方案，而搜狗软键盘只有中/英"
+                    + "（五笔仅物理键盘带工具栏时可用）。"
+                    + "两个中文方案同时暴露时，在软键盘上按快捷键会看不出变化。");
+        }
+        hint.setText(sb.toString());
     }
 }

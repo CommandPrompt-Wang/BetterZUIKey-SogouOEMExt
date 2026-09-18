@@ -58,7 +58,7 @@ public class InfoActivity extends AppCompatActivity {
         root.addView(sv, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
-        LangOrderActivity.applyInsets(root);
+        MainActivity.applyInsets(root);
     }
 
     private int themeColor(int attrRes) {

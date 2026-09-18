@@ -1113,7 +1113,7 @@ public final class SogouTranslator {
     private static void syncMarker() {
         final LangConfig cfg = sConfig;
         if (cfg == null || sService == null) return;
-        if (cfg.rotation().isEmpty()) return;
+        if (cfg.exposed().isEmpty()) return;
         final int f = rawLanguageState();
         final String real = (f == 1) ? LangSpec.EN
                 : (sScheme != null ? sScheme : LangSpec.PINYIN);

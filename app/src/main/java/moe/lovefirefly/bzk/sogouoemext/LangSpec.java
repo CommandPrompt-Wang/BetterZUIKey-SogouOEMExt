@@ -20,9 +20,15 @@ final class LangSpec {
 
     static final List<String> ALL = Arrays.asList(PINYIN, EN, WUBI);
 
-    /** 默认顺序：拼音、英语进框架列表；五笔在分隔线下方（不暴露，可手动切）。 */
-    static final String DEFAULT_ORDER = PINYIN + "," + EN + "," + WUBI;
-    static final int DEFAULT_DIVIDER = 2;
+    /**
+     * 默认暴露：拼音 + 英语（五笔不暴露 —— 它在搜狗软键盘上没有独立入口）。
+     *
+     * <p>{@link #DEFAULT_ORDER} / {@link #DEFAULT_DIVIDER} 只是**存储格式**的默认值
+     * （order 前 divider 项 = 暴露集合），顺序本身由 BZK 决定，不在这里排。
+     */
+    static final List<String> DEFAULT_EXPOSED = Arrays.asList(PINYIN, EN);
+    static final String DEFAULT_ORDER = String.join(",", ALL);
+    static final int DEFAULT_DIVIDER = DEFAULT_EXPOSED.size();
 
     private LangSpec() {}
 

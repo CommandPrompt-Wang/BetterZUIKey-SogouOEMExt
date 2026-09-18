@@ -390,12 +390,18 @@ final class LangConfig {
                 slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks);
     }
 
-    /** 分隔线上方（进入框架列表的那批），按顺序。 */
-    List<String> rotation() {
+    /**
+     * **暴露集合**：会被做成 subtype 交给框架的那批语言。
+     *
+     * <p>顺序固定为规范顺序（`LangSpec.ALL` 的顺序）—— **轮转顺序不归这里**，
+     * 那是 BZK 的事（BZK 的「语言轮转顺序」页）。这里只决定"哪些语言能被切到"。
+     * 存储上仍是 order 的前 divider 项（暴露的写前面），所以语义与旧版一致。
+     */
+    List<String> exposed() {
         return new ArrayList<>(order.subList(0, divider));
     }
 
-    /** 分隔线下方（手动集合）。 */
+    /** 不暴露的那批（只能从搜狗键盘手动切）。 */
     List<String> manualOnly() {
         return new ArrayList<>(order.subList(divider, order.size()));
     }
@@ -427,5 +433,10 @@ final class LangConfig {
 
     static List<String> defaultOrder() {
         return new ArrayList<>(Arrays.asList(LangSpec.DEFAULT_ORDER.split(",")));
+    }
+
+    /** 默认暴露的那批（拼音 + 英语）。 */
+    static List<String> defaultExposed() {
+        return new ArrayList<>(LangSpec.DEFAULT_EXPOSED);
     }
 }

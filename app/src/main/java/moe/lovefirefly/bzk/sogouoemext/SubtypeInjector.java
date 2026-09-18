@@ -53,7 +53,7 @@ public final class SubtypeInjector {
         final InputMethodInfo imi = findIme(imm, imeId);
         if (imi == null) return "ime-not-listed";
 
-        final List<String> want = cfg.rotation();
+        final List<String> want = cfg.exposed();
         final List<InputMethodSubtype> wantSubs = new ArrayList<>();
         for (String id : want) {
             final InputMethodSubtype s = LangSpec.subtype(id);
