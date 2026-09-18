@@ -56,6 +56,9 @@ public class MainActivity extends AppCompatActivity {
     private TextView editPairTableRow;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
+    /** 当前显示的 Toast（连按长按时先 cancel，避免排队）。 */
+    private android.widget.Toast sToast;
+
     private SharedPreferences prefs;
     private int pad;
 
@@ -274,7 +277,7 @@ public class MainActivity extends AppCompatActivity {
             String wantKey) {
         final MaterialSwitch sw = new MaterialSwitch(this);
         sw.setText(title);
-        sw.setPadding(0, pad / 2, 0, pad / 4);
+        sw.setPadding(0, 0, 0, pad / 4);
 
         final TextView tv = new TextView(this);
         tv.setTextAppearance(com.google.android.material.R.style
@@ -311,8 +314,10 @@ public class MainActivity extends AppCompatActivity {
                     .putLong(LangConfig.KEY_WANT_SEQ, seq).apply();
             sendConfigPoke();      // 立刻让模块重读配置（否则要等下一次周期读 ⇒ 有几秒延迟）
             for (Runnable r : statusRefreshers) r.run();
-            android.widget.Toast.makeText(this, title + "：" + (!now ? onText : offText),
-                    android.widget.Toast.LENGTH_SHORT).show();
+            if (sToast != null) sToast.cancel();        // 连按时打断上一个，别排队
+            sToast = android.widget.Toast.makeText(this, title + "：" + (!now ? onText : offText),
+                    android.widget.Toast.LENGTH_SHORT);
+            sToast.show();
             return true;
         };
         final LinearLayout box = newItemBox(parent);
@@ -366,7 +371,7 @@ public class MainActivity extends AppCompatActivity {
     private MaterialSwitch addSwitch(LinearLayout parent, String title, String hintText) {
         final MaterialSwitch sw = new MaterialSwitch(this);
         sw.setText(title);
-        sw.setPadding(0, pad / 2, 0, pad / 4);
+        sw.setPadding(0, 0, 0, pad / 4);
 
         final TextView tv = new TextView(this);
         tv.setTextAppearance(com.google.android.material.R.style
