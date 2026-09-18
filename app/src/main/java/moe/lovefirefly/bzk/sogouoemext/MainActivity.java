@@ -309,6 +309,7 @@ public class MainActivity extends AppCompatActivity {
             final long seq = System.currentTimeMillis();
             cfgPrefs.edit().putBoolean(wantKey, !now)
                     .putLong(LangConfig.KEY_WANT_SEQ, seq).apply();
+            sendConfigPoke();      // 立刻让模块重读配置（否则要等下一次周期读 ⇒ 有几秒延迟）
             for (Runnable r : statusRefreshers) r.run();
             android.widget.Toast.makeText(this, title + "：" + (!now ? onText : offText),
                     android.widget.Toast.LENGTH_SHORT).show();
