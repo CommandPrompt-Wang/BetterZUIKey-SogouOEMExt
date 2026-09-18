@@ -180,7 +180,9 @@ public class MainActivity extends AppCompatActivity {
         editPairTableRow.setClickable(true);
         editPairTableRow.setFocusable(true);
         editPairTableRow.setOnClickListener(v -> showAutoPairDialog());
-        newItemBox(strictBox).addView(editPairTableRow);
+        final LinearLayout pairBox = newItemBox(strictBox);
+        pairBox.addView(editPairTableRow);
+        attachPressFeedback((android.view.View) pairBox.getParent());
 
         final ExtendedFloatingActionButton fab = new ExtendedFloatingActionButton(this);
         fab.setText("原理 / 说明");
@@ -298,6 +300,7 @@ public class MainActivity extends AppCompatActivity {
 
         // 应急：长按标题直接切状态位（App 写「期望值」，模块读到后去设；热键仍照常）
         sw.setOnLongClickListener(v -> {
+            pulseLongPress((android.view.View) ((android.view.View) v).getParent().getParent());
             final android.content.SharedPreferences cfgPrefs =
                     getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
             final boolean now = cfgPrefs.contains(wantKey)
@@ -314,7 +317,41 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout box = newItemBox(parent);
         box.addView(sw);
         box.addView(tv);
+        attachPressFeedback((android.view.View) box.getParent());
         return sw;
+    }
+
+    /** 按下缩一点、松手弹回；递归挂到整棵子树（触摸目标是命中的子 View）。返回 false ⇒ 不吞事件。 */
+    private void attachPressFeedback(android.view.View root) {
+        final android.view.View.OnTouchListener l = (v, e) -> {
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    root.animate().scaleX(0.98f).scaleY(0.98f).setDuration(90).start();
+                    break;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    root.animate().scaleX(1f).scaleY(1f).setDuration(120).start();
+                    break;
+                default: break;
+            }
+            return false;
+        };
+        walkView(root, v -> v.setOnTouchListener(l));
+    }
+
+    private void walkView(android.view.View v, java.util.function.Consumer<android.view.View> action) {
+        action.accept(v);
+        if (v instanceof android.view.ViewGroup) {
+            final android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) walkView(g.getChildAt(i), action);
+        }
+    }
+
+    /** 长按触发时的短脉冲（缩放），让"这一下被吃下了"看得见。 */
+    private void pulseLongPress(android.view.View v) {
+        v.animate().scaleX(0.95f).scaleY(0.95f).setDuration(80)
+                .withEndAction(() -> v.animate().scaleX(1f).scaleY(1f).setDuration(140).start())
+                .start();
     }
 
     /** 一个设置项 = 一整个卡片（与 BZK 的条目同款：12dp 圆角 / 1dp outline 描边 / 0 elevation）。 */
@@ -353,6 +390,7 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout box = newItemBox(parent);
         box.addView(sw);
         box.addView(tv);
+        attachPressFeedback((android.view.View) box.getParent());
         return sw;
     }
 
