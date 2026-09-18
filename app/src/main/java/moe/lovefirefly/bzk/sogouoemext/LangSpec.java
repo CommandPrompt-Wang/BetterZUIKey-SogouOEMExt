@@ -20,7 +20,7 @@ final class LangSpec {
 
     static final List<String> ALL = Arrays.asList(PINYIN, EN, WUBI);
 
-    /** 默认顺序：拼音、英语 轮转；五笔在分隔线下方（可手动切）。 */
+    /** 默认顺序：拼音、英语进框架列表；五笔在分隔线下方（不暴露，可手动切）。 */
     static final String DEFAULT_ORDER = PINYIN + "," + EN + "," + WUBI;
     static final int DEFAULT_DIVIDER = 2;
 

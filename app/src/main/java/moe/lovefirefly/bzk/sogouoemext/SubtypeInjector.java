@@ -34,7 +34,7 @@ public final class SubtypeInjector {
 
     private SubtypeInjector() {}
 
-    /** 按配置把"分隔线上方"的语言做成 subtype（顺序 = 轮转顺序）。幂等。 */
+    /** 按配置把"分隔线上方"的语言做成 subtype（顺序 = 框架列表顺序 = BZK 的默认轮转顺序）。幂等。 */
     public static String apply(Context ctx, String packageName, LangConfig cfg) {
         try {
             return applyInternal(ctx, packageName, cfg);

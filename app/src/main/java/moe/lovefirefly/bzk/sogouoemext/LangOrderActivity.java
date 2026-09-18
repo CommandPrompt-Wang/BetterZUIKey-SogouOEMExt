@@ -30,7 +30,8 @@ import java.util.List;
 /**
  * 首页：语言顺序（可拖拽的顺序 + 可拖拽的分隔线）。
  *
- * <p><b>分隔线上方</b>的语言会被模块做成 subtype 暴露给框架（参与 next 轮转，顺序即此顺序）；
+ * <p><b>分隔线上方</b>的语言会被模块做成 subtype 暴露给框架（顺序即框架列表顺序 ——
+ * 也就是 BZK 的默认轮转顺序；BZK 若给这个输入法单独排过顺序则以 BZK 那份为准）；
  * <b>下方</b>的不做成 subtype，只能从搜狗键盘手动切；从下方切出时回到上方第一项。
  *
  * <p>视觉与交互跟 BZK 的应用模板列表一致：Material 3 主题、MaterialCardView 行、
@@ -83,7 +84,7 @@ public class LangOrderActivity extends AppCompatActivity {
         root.setOrientation(LinearLayout.VERTICAL);
 
         final TextView title = new TextView(this);
-        title.setText("切换语言顺序");
+        title.setText("语言顺序（暴露给框架）");
         title.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_HeadlineSmall);
         title.setPadding(pad * 2, pad * 2, pad * 2, pad / 2);
@@ -525,12 +526,14 @@ public class LangOrderActivity extends AppCompatActivity {
         }
         final StringBuilder sb = new StringBuilder();
         sb.append("长按拖动排序；分隔线自己也能拖。\n");
-        sb.append("上方（暴露为 subtype、按此顺序轮转）：")
+        sb.append("上方（暴露为 subtype，框架列表按这个顺序；BZK 没给这个输入法单独排过 → 轮转就按它）：")
                 .append(divider == 0 ? "（空）" : String.join(" → ", labels.subList(0, divider)))
                 .append('\n');
         sb.append("下方（不暴露，只能手动切）：")
                 .append(divider >= labels.size() ? "（空）"
                         : String.join("、", labels.subList(divider, labels.size())));
+        sb.append("\n\n轮转由 BZK 执行（本模块只负责让框架看见这些 subtype）。")
+                .append("要单独改轮转顺序：BZK → 输入法适配管理 → 长按这条输入法。");
         if (aboveIds.contains(LangSpec.PINYIN) && aboveIds.contains(LangSpec.WUBI)) {
             sb.append("\n\n注意：拼音和五笔都是中文方案，而搜狗软键盘只有中/英"
                     + "（五笔仅物理键盘带工具栏时可用）。"
@@ -623,7 +626,7 @@ public class LangOrderActivity extends AppCompatActivity {
             name.setText(LangSpec.label(e.lang));
             if (sub != null) {
                 final boolean above = position < dividerIndex();
-                sub.setText(above ? "暴露为 subtype · 参与轮转"
+                sub.setText(above ? "暴露为 subtype · 进入框架列表"
                         : "不暴露 · 只能手动切（从它切出时回到上方第一项）");
             }
         }
@@ -701,7 +704,7 @@ public class LangOrderActivity extends AppCompatActivity {
         row.addView(line, new LinearLayout.LayoutParams(0, Math.max(1, pad / 16), 1f));
 
         final TextView tag = new TextView(this);
-        tag.setText("  以下不参与轮转");
+        tag.setText("  以下不暴露（只能手动切）");
         tag.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodySmall);
         tag.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));

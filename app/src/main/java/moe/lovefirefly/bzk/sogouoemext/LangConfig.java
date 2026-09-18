@@ -13,7 +13,8 @@ import io.github.libxposed.api.XposedModule;
 /**
  * 语言顺序配置：一条可拖拽的顺序 + 一个分隔线位置。
  *
- * <p>分隔线<b>上方</b>的语言会被做成 subtype、参与 BZK 的 next 轮转；
+ * <p>分隔线<b>上方</b>的语言会被做成 subtype、进入框架的 subtype 列表
+ * （= BZK 的默认轮转顺序：BZK 没给这个输入法单独排过顺序时，轮转就按它走）；
  * <b>下方</b>的不进 subtype，只能手动切。
  *
  * <p>存在 libxposed 的 remote preferences（模块 App 通过 XposedService 写入，
@@ -389,7 +390,7 @@ final class LangConfig {
                 slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks);
     }
 
-    /** 分隔线上方（轮转集合），按顺序。 */
+    /** 分隔线上方（进入框架列表的那批），按顺序。 */
     List<String> rotation() {
         return new ArrayList<>(order.subList(0, divider));
     }

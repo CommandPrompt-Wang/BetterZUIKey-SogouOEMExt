@@ -100,7 +100,7 @@ public final class SogouTranslator {
     /** 框架最后一次告知的当前 subtype（写回/探针要用）。 */
     private static volatile InputMethodSubtype sCurrentSubtype;
 
-    /** 语言顺序配置（分隔线上方参与轮转、下方只能手动切）。 */
+    /** 语言顺序配置（分隔线上方进入框架列表、下方只能手动切）。 */
     private static volatile LangConfig sConfig;
 
     /** 当前中文方案：PINYIN / WUBI / null（未知）。靠观测搜狗自己的方案命令维护。 */
@@ -1106,8 +1106,9 @@ public final class SogouTranslator {
     /**
      * 让 marker 指向"真实语言"对应的位置。
      *
-     * <p>规则：真实语言在上方轮转集合里 → marker 指向它；在下方的（例如五笔）
-     * → marker 停在<b>最后一项</b>，这样 BZK 的下一次 next 正好绕回<b>第一项</b>。
+     * <p>规则：真实语言在上方（框架列表）里 → marker 指向它；在下方的（例如五笔）
+     * → marker 停在<b>最后一项</b>，这样 BZK 的下一次切换正好绕回<b>第一项</b>
+     * （BZK 现在按列表顺序轮转、到队尾回到队首，这个"停在最后一项"的技巧照样成立）。
      */
     private static void syncMarker() {
         final LangConfig cfg = sConfig;

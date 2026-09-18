@@ -50,7 +50,7 @@ public class BridgeHook extends XposedModule {
     /** 开发期：采样 LUa.F()（切五笔等不触发 subtype 回调的状态也能看到）。 */
     private static final boolean DEV_STATE_WATCH = false;
 
-    /** 开发期：测试输入法进程能否改框架当前 subtype（BZK 只做 next 方案的关键前提）。 */
+    /** 开发期：测试输入法进程能否改框架当前 subtype（模块只暴露 subtype、BZK 负责轮转的关键前提）。 */
     private static final boolean DEV_SUBTYPE_PROBE = false;
 
     /** 开发期：找方案（拼音/五笔）状态变量 + 测 switchToNextInputMethod。 */
