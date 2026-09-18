@@ -146,15 +146,6 @@ public class MainActivity extends AppCompatActivity {
         enSwitch = addSwitch(strictBox, "中英文标点",
                 "允许中文模式下在中英标点之间切换；英文输入状态下标点恒为英文。快捷键：Ctrl+.");
 
-        final TextView hotkeyHint = new TextView(this);
-        hotkeyHint.setTextAppearance(com.google.android.material.R.style
-                .TextAppearance_Material3_BodySmall);
-        hotkeyHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
-        hotkeyHint.setText("当前状态（快捷键切换，自动记住，不在界面显示）："
-                + "Shift+Space 全角/半角，Ctrl+. 中文标点/英文标点");
-        hotkeyHint.setPadding(0, 0, 0, pad / 2);
-        strictBox.addView(hotkeyHint);
-
         capSwitch = addSwitch(strictBox, "大写字母进拼音栏",
                 "中文输入时大写字母也进入拼音串，便于英文补全或迅速输入。\n"
                 + "注意：拼音栏仍会显示为小写，上屏时会根据实际输入情况转换大小写。");
