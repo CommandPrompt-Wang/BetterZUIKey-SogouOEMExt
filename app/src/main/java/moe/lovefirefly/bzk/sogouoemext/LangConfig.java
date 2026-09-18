@@ -206,7 +206,39 @@ final class LangConfig {
                 + "&" + KEY_LONG_MARKS + "=" + sp.getBoolean(KEY_LONG_MARKS, true)
                 // 配对串里可能出现 & 或 =，必须转义，否则会破坏 k=v&k=v 的行格式
                 + "&" + KEY_AUTO_PAIR_TABLE + "=" + encodeTable(
-                        sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE));
+                        sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE))
+                // 期望状态位：只有 App 长按标题写过才带上（模块据此去设状态位）
+                + (sp.contains(KEY_WANT_FULL)
+                        ? "&" + KEY_WANT_FULL + "=" + sp.getBoolean(KEY_WANT_FULL, false) : "")
+                + (sp.contains(KEY_WANT_ENP)
+                        ? "&" + KEY_WANT_ENP + "=" + sp.getBoolean(KEY_WANT_ENP, false) : "")
+                + (sp.contains(KEY_WANT_PHYS)
+                        ? "&" + KEY_WANT_PHYS + "=" + sp.getBoolean(KEY_WANT_PHYS, true) : "");
+    }
+
+    /** App 侧「长按标题应急切换」写的期望状态位（键名与 App 侧一致）。 */
+    static final String KEY_WANT_FULL = "wantFullwidth";
+    static final String KEY_WANT_ENP = "wantEnPunct";
+    static final String KEY_WANT_PHYS = "wantPhysComplete";
+
+    /**
+     * 只挑「期望状态位」三个键出来（有才返回）。
+     *
+     * <p>为什么不让 App 直接写状态位：状态位在**搜狗进程**的私有 prefs 里，
+     * App 物理上写不到 ⇒ 只能写进 App 自己的配置，模块读到后去设。
+     */
+    static java.util.Map<String, Boolean> parseWants(String dump) {
+        final java.util.Map<String, Boolean> out = new java.util.LinkedHashMap<>();
+        if (dump == null) return out;
+        for (String kv : dump.split("&")) {
+            final int i = kv.indexOf('=');
+            if (i <= 0) continue;
+            final String k = kv.substring(0, i);
+            if (KEY_WANT_FULL.equals(k) || KEY_WANT_ENP.equals(k) || KEY_WANT_PHYS.equals(k)) {
+                out.put(k, Boolean.parseBoolean(kv.substring(i + 1)));
+            }
+        }
+        return out;
     }
 
     /** 配对串编解码：只做百分号转义，避免其中的 & 与 = 破坏配置行格式。 */

@@ -142,11 +142,13 @@ public class MainActivity extends AppCompatActivity {
         smartSwitch = addSwitch(strictBox, "智能中文标点",
                 "使用更合理的中文标点映射（+ - # 等按半角处理）");
         fullSwitch = addStatusSwitch(strictBox, "全角模式",
-                "允许在全角/半角之间切换。\n快捷键：Shift+Space",
-                "fullwidth", true, "fullwidth", false, "全角", "半角");
+                "允许在全角/半角之间切换。\n快捷键：Shift+Space\n长按标题亦可切换全角/半角状态",
+                "fullwidth", true, "fullwidth", false, "全角", "半角",
+                LangConfig.KEY_WANT_FULL);
         enSwitch = addStatusSwitch(strictBox, "中英文标点",
-                "允许中文模式下在中英标点之间切换；\n快捷键：Ctrl+.",
-                "enPunct", true, "enPunct", false, "英文标点", "中文标点");
+                "允许中文模式下在中英标点之间切换；\n快捷键：Ctrl+.\n长按标题亦可切换中英标点状态",
+                "enPunct", true, "enPunct", false, "英文标点", "中文标点",
+                LangConfig.KEY_WANT_ENP);
 
         capSwitch = addSwitch(strictBox, "大写字母进拼音栏",
                 "中文输入时大写字母也进入拼音串，便于英文补全或迅速输入。\n"
@@ -164,8 +166,9 @@ public class MainActivity extends AppCompatActivity {
 
         // 9：物理键盘补全（模块自己注入）—— 与 S 各自独立，共用同一份匹配列表
         physPairSwitch = addStatusSwitch(strictBox, "物理键盘自动补全",
-                "输入引号、括号时自动关闭并将光标移到中间\n快捷键：Ctrl+Shift+9",
-                "physComplete", false, "physComplete", true, "开", "关");
+                "输入引号、括号时自动关闭并将光标移到中间\n快捷键：Ctrl+Shift+9\n长按标题亦可切换补全状态",
+                "physComplete", false, "physComplete", true, "开", "关",
+                LangConfig.KEY_WANT_PHYS);
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -266,7 +269,8 @@ public class MainActivity extends AppCompatActivity {
      */
     private MaterialSwitch addStatusSwitch(LinearLayout parent, String title, String hintPrefix,
             String featureKey, boolean featureDefault,
-            String statusKey, boolean statusDefault, String onText, String offText) {
+            String statusKey, boolean statusDefault, String onText, String offText,
+            String wantKey) {
         final MaterialSwitch sw = new MaterialSwitch(this);
         sw.setText(title);
         sw.setPadding(0, pad / 2, 0, pad / 4);
@@ -282,12 +286,30 @@ public class MainActivity extends AppCompatActivity {
             final android.content.SharedPreferences cfgPrefs =
                     getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
             final boolean featureOn = cfgPrefs.getBoolean(featureKey, featureDefault);
-            final boolean st = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
-                    .getBoolean(statusKey, statusDefault);
+            // App 刚长按写过期望值 ⇒ 先看它（模块同步后会镜像回来，值一致）
+            final boolean st = cfgPrefs.contains(wantKey)
+                    ? cfgPrefs.getBoolean(wantKey, statusDefault)
+                    : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
+                            .getBoolean(statusKey, statusDefault);
             tv.setText(hintPrefix + "\t当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
         };
         statusRefreshers.add(refresh);
         refresh.run();
+
+        // 应急：长按标题直接切状态位（App 写「期望值」，模块读到后去设；热键仍照常）
+        sw.setOnLongClickListener(v -> {
+            final android.content.SharedPreferences cfgPrefs =
+                    getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
+            final boolean now = cfgPrefs.contains(wantKey)
+                    ? cfgPrefs.getBoolean(wantKey, statusDefault)
+                    : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
+                            .getBoolean(statusKey, statusDefault);
+            cfgPrefs.edit().putBoolean(wantKey, !now).apply();
+            for (Runnable r : statusRefreshers) r.run();
+            android.widget.Toast.makeText(this, title + "：" + (!now ? onText : offText),
+                    android.widget.Toast.LENGTH_SHORT).show();
+            return true;
+        });
 
         parent.addView(sw);
         parent.addView(tv);

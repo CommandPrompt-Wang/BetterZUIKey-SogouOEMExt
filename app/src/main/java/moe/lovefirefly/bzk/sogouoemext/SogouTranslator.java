@@ -199,6 +199,47 @@ public final class SogouTranslator {
     private static volatile Boolean sFull;
     private static volatile Boolean sModeEn;
 
+    /** 直接读状态位（不经功能开关）。 */
+    private static boolean stateBit(String key, boolean def) {
+        final android.content.SharedPreferences sp = statePrefs();
+        return sp == null ? def : sp.getBoolean(key, def);
+    }
+
+    /**
+     * 应用 App 写来的「期望状态位」（长按标题应急切换用）。
+     *
+     * <p>只在值真的不同时写，写完镜像回 App（否则 App 那边的「当前状态」会停在旧值）。
+     */
+    private static void applyWants(java.util.Map<String, Boolean> wants) {
+        if (wants == null || wants.isEmpty()) return;
+        final android.content.SharedPreferences sp = statePrefs();
+        final android.content.SharedPreferences.Editor e = sp != null ? sp.edit() : null;
+        boolean dirty = false;
+        final Boolean wf = wants.get(LangConfig.KEY_WANT_FULL);
+        if (wf != null && wf != stateBit(KEY_FULL, false)) {
+            sFull = wf;
+            if (e != null) e.putBoolean(KEY_FULL, wf);
+            dirty = true;
+        }
+        final Boolean we = wants.get(LangConfig.KEY_WANT_ENP);
+        if (we != null && we != stateBit(KEY_MODE_EN, false)) {
+            sModeEn = we;
+            if (e != null) e.putBoolean(KEY_MODE_EN, we);
+            dirty = true;
+        }
+        final Boolean wp = wants.get(LangConfig.KEY_WANT_PHYS);
+        if (wp != null && wp != stateBit("physComplete", true)) {
+            sPhysState = wp;
+            if (e != null) e.putBoolean("physComplete", wp);
+            dirty = true;
+        }
+        if (e != null) e.apply();
+        if (dirty) {
+            Log.i(TAG, "wants from App applied: " + wants);
+            mirrorState();
+        }
+    }
+
     /**
      * 把三个状态位镜像给 App（App 读不到搜狗进程的私有 prefs）。
      *
@@ -745,6 +786,8 @@ public final class SogouTranslator {
         sAutoPair = cfg.autoPair;
         sPairMap = cfg.pairMap;
         sPhysComplete = cfg.physComplete;
+        // App 侧「长按标题应急切换」的期望值（有才应用；应用完顺带镜像回 App）
+        applyWants(LangConfig.parseWants(raw));
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
         // （否则 sStrict 永远停在会话启动时读到的那个值）
         final boolean strictNow = BridgeHook.ENABLE_STRICT && cfg.strict;
