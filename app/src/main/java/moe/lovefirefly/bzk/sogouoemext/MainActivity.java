@@ -181,7 +181,8 @@ public class MainActivity extends AppCompatActivity {
 
         // 纯开关（无快捷键）：光标后侧已有闭字符时只移光标，不再多补一个
         closeSkipSwitch = addSwitch(strictBox, "跳过已存在的闭合符号",
-                "当光标后侧已有闭合符时，只移动光标而不额外产生闭合符");
+                "当光标后侧已有闭合符时，只移动光标而不额外产生闭合符。\n"
+                + "当手动移动光标位置后恢复正常闭合");
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
