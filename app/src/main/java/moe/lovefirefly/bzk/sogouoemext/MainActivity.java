@@ -341,8 +341,12 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout box = newItemBox(parent);
         box.addView(row);
 
-        // 卡片先建好再挂长按（walkView 要遍历到子 View）
-        walkView((android.view.View) box.getParent(), v -> v.setOnLongClickListener(toggle));
+        // 长按只挂卡片 + 开关：说明/标题是非 clickable 的 ⇒ 触摸落到卡片（pressed ⇒ 水波纹正常）；
+        // 挂了子 View 反而让子 View 变触摸目标，卡片不进 pressed ⇒ 水波纹消失 ✗。开关是 clickable
+        // 的，会吃掉事件 ⇒ 单独挂一份（它自带自己的水波纹）。
+        ((android.view.View) box.getParent()).setOnLongClickListener(toggle);
+        sw.setOnLongClickListener(toggle);
+        walkView(sw, v -> v.setOnLongClickListener(toggle));
         return sw;
     }
 
