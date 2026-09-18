@@ -15,6 +15,10 @@ final class InfoText {
             "   setExplicitlyEnabledInputMethodSubtypes，补出 中文(zh-CN) / English(en-US)。\n" +
             "   root 与 system_server 都会被 IMMS 的 isSameApp 闸门静默拒绝，\n" +
             "   只有输入法自己的 uid 能通过 —— 所以这一步只能做成 Xposed 模块。\n" +
+            "   首页的勾选只决定「暴露哪些语言」；**轮转顺序不在这里** —— 顺序归 BZK\n" +
+            "   （BZK：输入法适配管理 → 长按这条输入法拖动排序）。\n" +
+            "   注意：拼音与五笔都是 zh-CN（靠 mode 区分），两个同时暴露时在搜狗软键盘上\n" +
+            "   按快捷键看不出变化 —— 软键盘只有中/英两态（五笔要物理键盘带工具栏才可用）。\n" +
             "\n" +
             "② 切换交给框架\n" +
             "   有了两个 subtype 之后，框架的 subtype 机制就真的能用了。\n" +

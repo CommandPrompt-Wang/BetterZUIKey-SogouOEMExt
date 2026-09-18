@@ -43,7 +43,6 @@ public class MainActivity extends AppCompatActivity {
     /** 勾选中的语言（= 暴露为 subtype 的那批）。顺序不在这里 —— 顺序归 BZK。 */
     private final java.util.Set<String> exposure = new java.util.LinkedHashSet<>();
     private LinearLayout langBox;
-    private TextView hint;
     private MaterialSwitch strictSwitch;
     private TextView strictHint;
     private MaterialSwitch smartSwitch;
@@ -69,16 +68,11 @@ public class MainActivity extends AppCompatActivity {
         root.setOrientation(LinearLayout.VERTICAL);
 
         final TextView title = new TextView(this);
-        title.setText("语言顺序（暴露给框架）");
+        title.setText("暴露给框架的语言");
         title.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_HeadlineSmall);
         title.setPadding(pad * 2, pad * 2, pad * 2, pad / 2);
 
-        hint = new TextView(this);
-        hint.setTextAppearance(com.google.android.material.R.style
-                .TextAppearance_Material3_BodySmall);
-        hint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
-        hint.setPadding(pad * 2, 0, pad * 2, pad / 2);
 
         // 语言部分：只有勾选（每个语言一行 MaterialCheckBox）
         langBox = new LinearLayout(this);
@@ -206,7 +200,6 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.addView(title);
-        content.addView(hint);
         content.addView(langBox, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         content.addView(strictBox);
@@ -463,7 +456,6 @@ public class MainActivity extends AppCompatActivity {
             langBox.removeAllViews();
             for (String id : LangSpec.ALL) langBox.addView(langRow(id, exposure.contains(id)));
         }
-        updateHint();
     }
 
     /** 一行：MaterialCardView + MaterialCheckBox；点整行也能切，改动立即落盘。 */
@@ -485,35 +477,16 @@ public class MainActivity extends AppCompatActivity {
                 new com.google.android.material.checkbox.MaterialCheckBox(this);
         cb.setText(LangSpec.label(id));
 
-        final TextView sub = new TextView(this);
-        sub.setTextAppearance(com.google.android.material.R.style.TextAppearance_Material3_BodySmall);
-        sub.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
-        sub.setPadding(pad * 3 / 4, 0, 0, 0);
-        sub.setText(subtitle(id, checked));
-
         cb.setChecked(checked);
         cb.setOnCheckedChangeListener((b, isChecked) -> {
             if (isChecked) exposure.add(id); else exposure.remove(id);
-            sub.setText(subtitle(id, isChecked));
-            updateHint();
             save();
         });
 
         row.addView(cb);
-        row.addView(sub);
         card.addView(row);
         card.setOnClickListener(v -> cb.toggle());
         return card;
-    }
-
-    /** 每行副标题：勾了会怎样、没勾会怎样。 */
-    private String subtitle(String id, boolean exposedNow) {
-        if (!exposedNow) {
-            return LangSpec.WUBI.equals(id)
-                    ? "不暴露 · 框架里没有它，只能手动切（软键盘上切不到五笔）"
-                    : "不暴露 · 框架里没有它，只能从搜狗键盘手动切";
-        }
-        return "暴露为 subtype · BZK / 系统框架可以切到它";
     }
 
     /**
@@ -540,23 +513,4 @@ public class MainActivity extends AppCompatActivity {
         sendConfigPoke();
     }
 
-    private void updateHint() {
-        final List<String> on = new ArrayList<>();
-        final List<String> off = new ArrayList<>();
-        for (String id : LangSpec.ALL) (exposure.contains(id) ? on : off).add(LangSpec.label(id));
-
-        final StringBuilder sb = new StringBuilder();
-        sb.append("勾选 = 把这个语言做成 subtype **暴露给框架**")
-                .append("（BZK 只认 subtype，不认搜狗内部语言）。\n");
-        sb.append("已暴露：").append(on.isEmpty() ? "（空）" : String.join(" → ", on));
-        sb.append("\n未暴露：").append(off.isEmpty() ? "（空）" : String.join("、", off));
-        sb.append("\n\n顺序不在这里排 —— 轮转顺序归 BZK：")
-                .append("「输入法适配管理 → 长按这条输入法」拖动排序；这里只决定哪些语言能被切到。");
-        if (exposure.contains(LangSpec.PINYIN) && exposure.contains(LangSpec.WUBI)) {
-            sb.append("\n\n注意：拼音和五笔都是中文方案，而搜狗软键盘只有中/英"
-                    + "（五笔仅物理键盘带工具栏时可用）。"
-                    + "两个中文方案同时暴露时，在软键盘上按快捷键会看不出变化。");
-        }
-        hint.setText(sb.toString());
-    }
 }
