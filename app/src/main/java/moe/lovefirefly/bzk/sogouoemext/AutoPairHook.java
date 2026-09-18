@@ -324,6 +324,89 @@ final class AutoPairHook {
         return Boolean.TRUE.equals(sInjecting.get());
     }
 
+    /**
+     * 包裹刚做完的一小段静默窗口的截止时刻（{@link System#currentTimeMillis()}）。
+     *
+     * <p>为什么需要：搜狗通过 {@code onUpdateSelection} 把选区变化喂给
+     * {@code MF.a(IIIIII)}，它据此维护自己的光标模型，并会在约 300ms / 1s 后
+     * 把光标改回"闭字符之前"（真机实测 6 → 1 → 0）。包裹是我们自己提交的，
+     * 那几次回调对它没有意义、却会踩掉我们设的光标，所以在窗口内不转给它。
+     * 窗口很短（{@link #WRAP_QUIET_MS}），过后一切照旧。
+     */
+    private static volatile long sWrapQuietUntil;
+
+    /** 包裹后的静默窗口时长（ms）。 */
+    private static final long WRAP_QUIET_MS = 800L;
+
+    /**
+     * 包裹后的窗口内，搜狗若又请求 {@code setSelection}，就把它改成这个位置（-1 = 不接管）。
+     *
+     * <p>为什么是"改"而不是"再设一次"：真机日志证明搜狗在包裹之后会通过自己的
+     * {@code Qja.setSelection} 请求 {@code setSelection(1,1)}（把它自己的模型当成真相），
+     * 而 {@code Qja} 是<b>排队</b>执行的（{@code Handler.post(new vja(...))}）——
+     * 我们的同步/延后调用都排不进那个队，所以怎么设都会被它最后覆盖。
+     * 直接改写它这一次请求的参数，才是"排到最后"的唯一办法。
+     */
+    private static volatile int sWrapOverrideTo = -1;
+
+    /**
+     * 给 {@code Qja.setSelection} 的钩子用：窗口内把搜狗那次请求改写到我们要的位置。
+     *
+     * @return 改写后的位置；{@code -1} = 不在窗口内 / 不改写
+     */
+    static int overrideSelectionWhileQuiet() {
+        return System.currentTimeMillis() < sWrapQuietUntil ? sWrapOverrideTo : -1;
+    }
+
+    /**
+     * 是否要吞掉这次 {@code onUpdateSelection}（窗口外恒 false）。 */
+    static boolean shouldSwallowSelectionUpdate() {
+        return System.currentTimeMillis() < sWrapQuietUntil;
+    }
+
+    /**
+     * 包裹后的窗口内，把每次 {@code setSelection} 的入参打出来（诊断用）。
+     */
+    static void logSelectionWhileQuiet(final Object connection, final int start, final int end) {
+        if (!BridgeHook.DEV_AUTOPAIR_LOG) return;
+        if (System.currentTimeMillis() >= sWrapQuietUntil) return;
+        Log.i(TAG, "pairwrap: setSelection(" + start + "," + end + ") via "
+                + (connection == null ? "null" : connection.getClass().getName()));
+    }
+
+    /** 开始静默窗口（在真的提交整串之前调用）。 */
+    private static void beginWrapQuiet() {
+        sWrapQuietUntil = System.currentTimeMillis() + WRAP_QUIET_MS;
+    }
+
+    /**
+     * 把"这次包裹是被谁调进来的"打出来（只打一次调用栈；诊断用，默认关）。
+     *
+     * <p>为什么要它：反编译能告诉我们搜狗有哪些成对提交/设光标的路径，但**不知道运行时
+     * 实际走的是哪条** —— 靠猜字节码容易错（本轮就猜错过一次）。栈帧是运行时事实。
+     */
+    private static void logWrapStack() {
+        if (!BridgeHook.DEV_AUTOPAIR_LOG) return;
+        try {
+            final StackTraceElement[] st = Thread.currentThread().getStackTrace();
+            final StringBuilder sb = new StringBuilder("pairwrap stack:");
+            int n = 0;
+            for (StackTraceElement e : st) {
+                final String cn = e.getClassName();
+                if (cn.startsWith("java.lang.Thread") || cn.startsWith("dalvik.")
+                        || cn.startsWith("android.os.Looper") || cn.startsWith("android.os.Handler")
+                        || cn.startsWith("android.os.MessageQueue")) {
+                    continue;
+                }
+                sb.append("\n      ").append(cn).append('.').append(e.getMethodName())
+                  .append(':').append(e.getLineNumber());
+                if (++n >= 14) break;
+            }
+            Log.i(TAG, sb.toString());
+        } catch (Throwable ignored) {
+        }
+    }
+
     /** 当前是否正在处理硬件按键（由按键守卫置/清）。 */
     private static volatile boolean sHwKeyDown;
 
@@ -442,6 +525,7 @@ final class AutoPairHook {
         }
 
         final InputConnection ic = (InputConnection) connection;
+        logWrapStack();
         final CharSequence sel;
         try {
             sel = ic.getSelectedText(0);
@@ -461,29 +545,32 @@ final class AutoPairHook {
         final int at = cursorOffset(ic);
         final String openStr = String.valueOf(open);
         final String closeStr = String.valueOf(close);
+        final int end = at >= 0
+                ? at + openStr.length() + sel.length() + closeStr.length() : -1;
+        // 交给窗口内的 Qja.setSelection 改写用（搜狗那次请求比我们返回得还晚，见 finally 注释）
+        sWrapOverrideTo = end;
         try {
             sInjecting.set(Boolean.TRUE);
+            beginWrapQuiet();          // 先开静默窗口：下面那次 setSelection 引起的回调也别喂给搜狗
             ic.beginBatchEdit();
             // 1 = 相对插入文本的末尾（按协议就该落在整串之后）
             ic.commitText(openStr + sel + closeStr, 1);
-            // 可是**光靠那个参数不够**：搜狗会按它自己的内部光标模型再挪一次，
-            // 结果光标停在闭字符前（真机 19:03：`（1234）` 打成 `（|1234）` ✗）。
-            // 所以提交完再显式 `setSelection` 到闭字符之后 —— 模块里物理补全
-            // 那条路（moveCursorLeftOne）就是靠显式 setSelection 才准的。
-            // 放在 batchEdit 里，确保与搜狗的编辑同批、顺序不被插队。
-            if (at >= 0) {
-                final int end = at + openStr.length() + sel.length() + closeStr.length();
-                ic.setSelection(end, end);
-                if (BridgeHook.DEV_AUTOPAIR_LOG) {
-                    Log.i(TAG, "pairwrap: cursor " + at + " -> " + end);
-                }
-            }
             ic.endBatchEdit();
             if (close == open) {
                 // 同字符对（引号）：这一格翻转已经被"选中+包裹"用掉了，
                 // 再翻一格把奇偶补回来 —— 否则下一次按引号键会出成闭引号 ✗。
                 // 只在真包成功之后做（失败就直接 return false 走老路，那一格归搜狗自己）。
                 balanceQuoteToggle(open);
+            }
+            if (end >= 0) {
+                // 光标只是收尾：**它失败也不能让包裹本身判负**。
+                // 踩过：延后那条路构造 Handler 抛异常，被下面那个 catch 吞掉，
+                // 于是"文字已经提交成功"却返回 false，调用方又走了一遍原提交 ⇒ 出双份。
+                try {
+                    retryCursorAfterSogou(ic, end);
+                } catch (Throwable err) {
+                    Log.w(TAG, "pairwrap cursor fix failed (text already committed): " + err);
+                }
             }
             if (BridgeHook.DEV_AUTOPAIR_LOG) {
                 Log.i(TAG, "pairwrap: " + open + "…" + close + " around " + sel.length()
@@ -495,6 +582,89 @@ final class AutoPairHook {
             return false;                                          // 失败就让原提交照常走
         } finally {
             sInjecting.set(Boolean.FALSE);
+            // 注意：**不要**在这里清 sWrapOverrideTo。
+            // 真机时序（2026-09-18）：搜狗那次 setSelection(1,1) 是在 commitText 链返回
+            // **之后**才发出的 —— 清早了它就变成"窗口内但没目标"，等于没接管。
+            // 覆盖值活到窗口结束即可（判定在 overrideSelectionWhileQuiet 里）。
+        }
+    }
+
+    /**
+     * 把光标挪到整串之后 —— <b>并且要再补一次</b>。
+     *
+     * <p>为什么一次不够（真机 2026-09-18 实测）：提交时已经按协议传了
+     * {@code newCursorPosition=1}，随后又在同一个 batchEdit 里显式 {@code setSelection(6,6)}，
+     * 两次日志都证明调用发出去了，可光标<b>照样</b>停在闭字符前（{@code （|1234）}）——
+     * 搜狗在这之后又按它自己的内部光标模型挪了一次。所以必须让"挪光标"排到它<b>后面</b>：
+     * <ol>
+     *   <li>同步先设一次（搜狗不改的话立刻就对，也让同批编辑里以它为准）；</li>
+     *   <li>再 {@code post} 一次到 {@link InputConnection#getHandler()} —— 它跑在输入事件
+     *       之后，能把搜狗那次覆盖纠正回来。</li>
+     * </ol>
+     *
+     * <p>post 那一步会**先核对**光标前确实是"我们刚包好的那一串"再动：万一用户在
+     * 这一瞬间又输入了别的东西，就不去抢光标（宁可光标位置不理想，也不能把用户的光标跳错）。
+     */
+    private static void retryCursorAfterSogou(final InputConnection ic, final int end) {
+        try {
+            ic.setSelection(end, end);
+        } catch (Throwable err) {
+            Log.w(TAG, "pairwrap cursor sync failed: " + err);
+        }
+        final android.os.Handler h;
+        try {
+            h = ic.getHandler();
+        } catch (Throwable err) {
+            Log.w(TAG, "pairwrap: getHandler threw: " + err);
+            return;                                                // 没有 handler 就只能靠同步那一次
+        }
+        if (h == null) {
+            // RemoteInputConnection 不给我们 handler（真机实测为 null）⇒ 借搜狗主线程的
+            SogouTranslator.postAfterImeSettles(ic, end);
+            return;
+        }
+        postCursorFix(h, ic, end);
+    }
+
+    /**
+     * 稍后把光标**再落一次**到整串之后。
+     *
+     * <p>为什么必须延后：真机日志证明同步那次 {@code setSelection(6,6)} 是<b>成功</b>的
+     * （紧接着读回来就是 6），可搜狗随后又按它自己的模型挪回了闭字符前，
+     * 最终渲染出来还是 {@code （|1234）}。而 {@code ic.getHandler()} 返回 null，
+     * 没法在连接上排队，所以由 {@link SogouTranslator#postAfterImeSettles} 借搜狗主线程补一次。
+     *
+     * <p>只往前挪（{@code now < end}）就不碰 —— 那种情况是用户自己按了左方向键，
+     * 不该把光标再拽回末尾。
+     */
+    static void settleCursor(final Object connection, final int end) {
+        if (!(connection instanceof InputConnection) || end < 0) return;
+        final InputConnection ic = (InputConnection) connection;
+        try {
+            final int now = cursorOffset(ic);
+            if (now < 0 || now < end || now == end) {
+                if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                    Log.i(TAG, "pairwrap: settle noop now=" + now + " end=" + end);
+                }
+                return;
+            }
+            ic.setSelection(end, end);
+            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                Log.i(TAG, "pairwrap: settle " + now + " -> " + end
+                        + ", after=" + cursorOffset(ic));
+            }
+        } catch (Throwable err) {
+            Log.w(TAG, "pairwrap cursor settle failed: " + err);
+        }
+    }
+
+    /** 延迟 {@code delayMs} 后把光标落回整串之后（仅当它被挪到了后面）。 */
+    private static void postCursorFix(final android.os.Handler h, final InputConnection ic,
+                                      final int end) {
+        try {
+            h.postDelayed(() -> settleCursor(ic, end), 60L);
+        } catch (Throwable err) {
+            Log.w(TAG, "pairwrap cursor post schedule failed: " + err);
         }
     }
 

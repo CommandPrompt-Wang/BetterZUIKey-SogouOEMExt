@@ -394,6 +394,52 @@ public final class SogouTranslator {
         sCommandTrace = trace;
     }
 
+    /**
+     * 接管搜狗自己的 {@code Qja.setSelection}：**包裹后的窗口内改写它的目标位置**。
+     *
+     * <p>为什么必须在这里改，而不是我们自己多设几次：调用栈证明我们拿到的 connection
+     * 就是 {@code Qja}（{@code Cha.commitText → Qja.commitText → MC.commitText →
+     * RemoteInputConnection}），而 {@code Qja.setSelection} 不立即设，而是
+     * {@code Handler.post(new vja(...))} 排队。真机日志（2026-09-18）：
+     * 包裹完成后搜狗立刻请求 {@code setSelection(1,1)}（它把自己"刚插入一对"的模型当真相），
+     * 排在我们后面执行 ⇒ 我们怎么设都会被它盖成 1。
+     * 于是改成：窗口内把<b>它那一次请求的参数</b>换成我们要的位置 —— 相当于排到它最后。
+     *
+     * <p>窗口外（{@link AutoPairHook#overrideSelectionWhileQuiet()} 返回 -1）完全放行，
+     * 用户正常移动光标不受影响。
+     */
+    private static void installSelectionObserver() {
+        final XposedModule module = sModule;
+        final Object svc = sService;
+        if (module == null || svc == null || sSelectionObserverInstalled) return;
+        sSelectionObserverInstalled = true;
+        try {
+            final Class<?> qja = Class.forName("Qja", false, svc.getClass().getClassLoader());
+            final Method m = qja.getDeclaredMethod("setSelection", int.class, int.class);
+            m.setAccessible(true);
+            module.hook(m).intercept(chain -> {
+                final Object a0 = chain.getArg(0);
+                final Object a1 = chain.getArg(1);
+                if (!(a0 instanceof Integer) || !(a1 instanceof Integer)) return chain.proceed();
+                final int start = (Integer) a0;
+                final int end = (Integer) a1;
+                AutoPairHook.logSelectionWhileQuiet(chain.getThisObject(), start, end);
+                final int to = AutoPairHook.overrideSelectionWhileQuiet();
+                if (to < 0) return chain.proceed();               // 窗口外：放行
+                if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                    Log.i(TAG, "pairwrap: Qja.setSelection(" + start + "," + end
+                            + ") rewritten to (" + to + "," + to + ")");
+                }
+                return chain.proceed(new Object[]{to, to});
+            });
+            Log.i(TAG, "Qja.setSelection hook installed");
+        } catch (Throwable err) {
+            Log.i(TAG, "Qja.setSelection hook not installed: " + err);
+        }
+    }
+
+    private static volatile boolean sSelectionObserverInstalled;
+
     public static void install(XposedModule module, ClassLoader cl, Context ctx, String pkg) {
         sModule = module;
         sCtx = ctx;
@@ -403,6 +449,23 @@ public final class SogouTranslator {
                     "android.inputmethodservice.InputMethodService", false, cl);
             for (Method m : svc.getDeclaredMethods()) {
                 final String name = m.getName();
+                if (name.equals("onUpdateSelection") && m.getParameterCount() == 6) {
+                    // 包裹后的静默窗口内不把选区变化喂给搜狗：它会据此维护光标模型，
+                    // 并在约 300ms/1s 后把光标改回"闭字符之前"，踩掉我们设的位置
+                    // （真机实测 6 → 1 → 0）。窗口外一律照常放行。
+                    m.setAccessible(true);
+                    module.hook(m).intercept(chain -> {
+                        if (AutoPairHook.shouldSwallowSelectionUpdate()) {
+                            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                                Log.i(TAG, "pairwrap: swallowed onUpdateSelection (quiet window)");
+                            }
+                            return null;                     // void
+                        }
+                        return chain.proceed();
+                    });
+                    Log.i(TAG, "quiet-window hook on " + name);
+                    continue;
+                }
                 if (name.equals("setInputView")) {
                     m.setAccessible(true);
                     module.hook(m).intercept(chain -> {
@@ -412,6 +475,7 @@ public final class SogouTranslator {
                             bindCommandRegistry();
                             installKeyGuards();
                             installPunctuationRewrite();
+                            installSelectionObserver();
                             if (BridgeHook.DEV_PUNCT_PROBE) {
                                 SogouPunctProbe.install(sModule, SogouTranslator.class.getClassLoader(),
                                         sService);
@@ -1365,6 +1429,38 @@ public final class SogouTranslator {
         } catch (Throwable ignored) {
         }
         return 0;
+    }
+
+    /**
+     * 把"选区包裹"之后的光标**延后**落回闭字符之后（兜底）。
+     *
+     * <p>主手段其实是 {@code Qja.setSelection} 的参数改写（见上面
+     * {@code installSelectionObserver}）—— 那是唯一能"排到搜狗后面"的位置。
+     * 这里保留一条兜底：同步 {@code setSelection} 之后再补两个时间点，
+     * 万一搜狗走了别的路径改光标，还能拉回来。
+     *
+     * <p>每次都由 {@link AutoPairHook#settleCursor} 判断：只有光标被挪到**后面**才拉回来，
+     * 用户自己按方向键往左移的情况不碰。
+     */
+    static void postAfterImeSettles(final Object connection, final int end) {
+        final Handler h;
+        try {
+            h = new Handler(Looper.getMainLooper());
+        } catch (Throwable err) {
+            Log.w(TAG, "postAfterImeSettles: no main handler: " + err);
+            return;
+        }
+        final long[] delays = {0L, 300L, 1000L};
+        for (final long d : delays) {
+            try {
+                final Runnable r = () -> AutoPairHook.settleCursor(connection, end);
+                if (d <= 0L) h.post(r);
+                else h.postDelayed(r, d);
+            } catch (Throwable err) {
+                Log.w(TAG, "postAfterImeSettles failed: " + err);
+                return;
+            }
+        }
     }
 
     /**
