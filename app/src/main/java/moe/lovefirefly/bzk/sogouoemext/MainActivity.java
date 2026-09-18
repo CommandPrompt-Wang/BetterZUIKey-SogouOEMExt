@@ -41,8 +41,6 @@ public class MainActivity extends AppCompatActivity {
     private static final String BZK_PKG = "moe.lovefirefly.betterzuikey";
 
     /** 勾选中的语言（= 暴露为 subtype 的那批）。顺序不在这里 —— 顺序归 BZK。 */
-    private final java.util.Set<String> exposure = new java.util.LinkedHashSet<>();
-    private LinearLayout langBox;
     private MaterialSwitch strictSwitch;
     private TextView strictHint;
     private MaterialSwitch smartSwitch;
@@ -73,16 +71,10 @@ public class MainActivity extends AppCompatActivity {
         root.setOrientation(LinearLayout.VERTICAL);
 
         final TextView title = new TextView(this);
-        title.setText("暴露给框架的语言");
+        title.setText("搜狗增强");
         title.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_HeadlineSmall);
         title.setPadding(pad * 2, pad * 2, pad * 2, pad / 2);
-
-
-        // 语言部分：只有勾选（每个语言一行 MaterialCheckBox）
-        langBox = new LinearLayout(this);
-        langBox.setOrientation(LinearLayout.VERTICAL);
-        langBox.setPadding(0, pad / 2, 0, pad / 2);
 
         final LinearLayout strictBox = new LinearLayout(this);
         strictBox.setOrientation(LinearLayout.VERTICAL);
@@ -231,8 +223,7 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         content.addView(title);
-        content.addView(langBox, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        addExposeEntry(content);       // 「选择在输入法框架中显示的语言」→ 子页面
         content.addView(strictBox);
 
         final android.widget.ScrollView scroll = new android.widget.ScrollView(this);
@@ -247,7 +238,6 @@ public class MainActivity extends AppCompatActivity {
 
         bindStrictSwitch(false);
         bindPunctSwitches(LangConfig.defaults());
-        rebuildFromModel(LangConfig.defaults().exposed());
 
         // 配置存在本机（模块通过 ContentProvider 读取），不需要任何框架服务
         prefs = getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
@@ -259,7 +249,6 @@ public class MainActivity extends AppCompatActivity {
             android.util.Log.i(TAG, "UI: seed strict=" + bzk + " (first run)");
         }
         final LangConfig cfg0 = LangConfig.load(prefs);
-        rebuildFromModel(cfg0.exposed());
         bindStrictSwitch(cfg0.strict);
         bindPunctSwitches(cfg0);
 
@@ -390,6 +379,36 @@ public class MainActivity extends AppCompatActivity {
             final android.view.ViewGroup g = (android.view.ViewGroup) v;
             for (int i = 0; i < g.getChildCount(); i++) walkView(g.getChildAt(i), action);
         }
+    }
+
+    /**
+     * 首页那一行入口：**选择在输入法框架中显示的语言** → {@link ExposeLanguagesActivity}。
+     *
+     * <p>语言勾选是低频、一次定好的事，搬进子页面；这里是那张卡片 + 右侧 › 提示可点。
+     */
+    private void addExposeEntry(LinearLayout parent) {
+        final LinearLayout box = newItemBox(parent);
+
+        final TextView label = new TextView(this);
+        label.setText("选择在输入法框架中显示的语言");
+        label.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyLarge);
+        label.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface));
+
+        final TextView arrow = new TextView(this);
+        arrow.setText("›");
+        arrow.setTextSize(20);
+        arrow.setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary));
+
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.addView(label, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(arrow);
+        box.addView(row);
+        box.setOnClickListener(v -> startActivity(
+                new android.content.Intent(this, ExposeLanguagesActivity.class)));
     }
 
     /** 一个设置项 = 一整个卡片（与 BZK 的条目同款：12dp 圆角 / 1dp outline 描边 / 0 elevation）。 */
@@ -625,79 +644,6 @@ public class MainActivity extends AppCompatActivity {
             v.setPadding(0, top, 0, bottom);
             return insets;
         });
-    }
-
-    // ------------------------------------------------------------------
-    // 模型：只有"暴露 / 不暴露"—— 顺序归 BZK
-    // ------------------------------------------------------------------
-
-    /** 按配置重建勾选列表（行顺序固定用 {@link LangSpec#ALL}，与轮转顺序无关）。 */
-    private void rebuildFromModel(List<String> exposedIds) {
-        exposure.clear();
-        if (exposedIds != null) {
-            for (String id : exposedIds) {
-                if (LangSpec.ALL.contains(id)) exposure.add(id);
-            }
-        }
-        if (langBox != null) {
-            langBox.removeAllViews();
-            for (String id : LangSpec.ALL) langBox.addView(langRow(id, exposure.contains(id)));
-        }
-    }
-
-    /** 一行：MaterialCardView + MaterialCheckBox；点整行也能切，改动立即落盘。 */
-    private View langRow(String id, boolean checked) {
-        final com.google.android.material.card.MaterialCardView card =
-                new com.google.android.material.card.MaterialCardView(this);
-        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(pad * 3 / 4, pad * 3 / 8, pad * 3 / 4, pad * 3 / 8);
-        card.setLayoutParams(lp);
-        card.setRadius(pad * 3 / 4);
-        card.setCardElevation(pad / 16f);
-
-        final LinearLayout row = new LinearLayout(this);
-        row.setOrientation(LinearLayout.VERTICAL);
-        row.setPadding(pad * 3 / 4, pad / 2, pad * 3 / 4, pad / 2);
-
-        final com.google.android.material.checkbox.MaterialCheckBox cb =
-                new com.google.android.material.checkbox.MaterialCheckBox(this);
-        cb.setText(LangSpec.label(id));
-
-        cb.setChecked(checked);
-        cb.setOnCheckedChangeListener((b, isChecked) -> {
-            if (isChecked) exposure.add(id); else exposure.remove(id);
-            save();
-        });
-
-        row.addView(cb);
-        card.addView(row);
-        card.setOnClickListener(v -> cb.toggle());
-        return card;
-    }
-
-    /**
-     * 落盘。
-     *
-     * <p><b>存储格式没变</b>：还是 `order` + `divider` —— 暴露的排前面（规范顺序），
-     * 未暴露的接在后面，`divider` = 暴露个数。这样模块侧（读 order/divider 的
-     * {@code LangConfig}）与外界看到的语义完全一致，改这个页面**不需要重启**。
-     */
-    private void save() {
-        if (prefs == null) {
-            android.util.Log.w(TAG, "UI: exposure save ignored, prefs unavailable");
-            Toast.makeText(this, "配置未就绪，改动未保存（请重开本 App 再试）",
-                    Toast.LENGTH_LONG).show();
-            return;
-        }
-        final List<String> order = new ArrayList<>();
-        for (String id : LangSpec.ALL) if (exposure.contains(id)) order.add(id);
-        for (String id : LangSpec.ALL) if (!exposure.contains(id)) order.add(id);
-        prefs.edit()
-                .putString("order", String.join(",", order))
-                .putInt("divider", exposure.size())
-                .apply();
-        sendConfigPoke();
     }
 
 }

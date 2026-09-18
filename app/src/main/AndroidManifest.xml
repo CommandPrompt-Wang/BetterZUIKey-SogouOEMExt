@@ -48,6 +48,11 @@
             android:exported="false"
             android:label="原理 / 说明" />
 
+        <activity
+            android:name=".ExposeLanguagesActivity"
+            android:exported="false"
+            android:label="选择在输入法框架中显示的语言" />
+
     </application>
 
 </manifest>
