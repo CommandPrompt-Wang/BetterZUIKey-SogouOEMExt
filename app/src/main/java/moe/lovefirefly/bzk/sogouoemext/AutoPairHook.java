@@ -441,7 +441,7 @@ final class AutoPairHook {
             moveCursorLeftOne(ic);
             // closeSkip 的状态位：只有"补完闭字符之后，光标后还是这个闭字符"才记为待跳过
             // （即打闭字符那一下补的其实是"光标后本来就有的那个"）
-            if (SogouTranslator.closeSkipEnabled()) markPairInjected(ic, open, close);
+            if (SogouTranslator.closeSkipEnabled()) markPairInjected(close);
             if (BridgeHook.DEV_AUTOPAIR_LOG) {
                 Log.i(TAG, "physpair: " + open + " -> " + open + close + " (cursor mid)");
             }
@@ -490,91 +490,79 @@ final class AutoPairHook {
         if (connection == null) return false;
         if (!(connection instanceof InputConnection)) return false;
 
-        // 先按单个开字符判定；不成立再看它是不是"一整个配对"
-        char open = 0;
-        Character close = null;
-        if (resolved != null && resolved.length() == 1) {
-            open = resolved.charAt(0);
-            close = SogouTranslator.autoPairMap().get(open);
-        }
-        if (close == null) {
-            open = 0;
-            close = null;
-            if (pair != null && pair.length() == 2) {
-                final char a = pair.charAt(0);
-                final Character b = SogouTranslator.autoPairMap().get(a);
-                // 第二字符必须**正是**它配对的闭字符：这样 "（（"、"（【" 之类的多字符
-                // 标点串都不会被误当成一对
-                if (b != null && b == pair.charAt(1)) {
-                    open = a;
-                    close = b;
-                }
+        // 这一次按下的字符（**必须保住它**：它是判断"这次按的是哪个闭字符"的唯一依据）。
+        // 踩过的致命写法：`if (close == null) { open = 0; ... }` —— 那等于把 "）" 自己的
+        // 码点清成 0，于是后面 `isCloser(open)` 永远为 false，整段 closeSkip 永远进不去。
+        final char ch = (resolved != null && resolved.length() == 1) ? resolved.charAt(0) : 0;
+        Character close = ch == 0 ? null : SogouTranslator.autoPairMap().get(ch);
+
+        // 成对提交（长按 z 的符号菜单一次给两个字）：只有"正好是一对"才认。
+        // 注意要**同时**把 ch 换成那一对的开字符，否则包出来会少个左符号（踩过：` abc）`）。
+        char chUse = ch;
+        if (close == null && pair != null && pair.length() == 2) {
+            final char a = pair.charAt(0);
+            final Character b = SogouTranslator.autoPairMap().get(a);
+            if (b != null && b == pair.charAt(1)) {
+                chUse = a;
+                close = b;
             }
         }
 
+        final boolean isOpener = close != null;
+        // 同字符串对（引号）：一个键位既是开又是闭，翻转交给搜狗自己的标志位，
+        // closeSkip 不掺和（否则包完一次、下一次按引号就被当成"跳过"吞掉）。
+        final boolean samePair = isOpener && close == chUse;
+        // 这次按下去要上屏的闭字符：开字符 ⇒ 它的配对；纯闭字符 ⇒ 它自己
+        final char wantIsCloserCh = isOpener ? close : chUse;
+        final boolean wantIsCloser = wantIsCloserCh != 0 && isCloser(wantIsCloserCh);
+
         // 既不是开字符、也不是任何配对里的闭字符 ⇒ 不关我们的事
-        if (close == null && !isCloser(open)) {
+        if (!isOpener && !wantIsCloser) {
             logWrapSkip(resolved, "not-opener");
             return false;
         }
 
         final InputConnection ic = (InputConnection) connection;
 
-        if (close != null && (sHwKeyDown ? !SogouTranslator.physCompleteActive()
-                                         : !SogouTranslator.autoPairEnabled())) {
+        if (isOpener && (sHwKeyDown ? !SogouTranslator.physCompleteActive()
+                                    : !SogouTranslator.autoPairEnabled())) {
             logWrapSkip(resolved, sHwKeyDown ? "off:physComplete" : "off:autoPair");
             return false;                                          // 开关关着 → 老路（包裹不做）
         }
 
-        // ---- ① 跳过已存在的闭合符：光标后侧正是它 ⇒ 只把光标移过去，不再输出 ----
-        //
-        // 两种进来的字符都要处理：
-        //   (a) 开字符（close != null，走包裹那条路）；
-        //   (b) **纯闭字符**（它自己不是开字符，例如 ）】」）—— 它在上面查不到开字符，
-        //       所以必须**在提前返回之前**先判一次，否则"打闭字符"永远走不到这里
-        //       （这就是本轮踩的坑：先 return false 才轮到这段，等于开关没接线）。
-        //   引号这类"既是开又是闭"的字符走 (a)：它的 close != null，天然不会被这里拦住。
-        if (SogouTranslator.closeSkipEnabled()) {
-            if (close != null) {
-                final int skipTo = caretBeforeCloser(ic, open, close);
-                if (skipTo >= 0) {
-                    try {
-                        ic.setSelection(skipTo, skipTo);
-                        sWrapDepth = -1;                           // 这一格配对用完 ⇒ 清状态
-                        if (BridgeHook.DEV_AUTOPAIR_LOG) {
-                            Log.i(TAG, "closeskip: " + open + " -> caret only, setSel("
-                                    + skipTo + "," + skipTo + ")");
-                        }
-                        return true;                               // 原提交不要走：闭字符已在光标后
-                    } catch (Throwable err) {
-                        Log.w(TAG, "closeskip failed: " + err);
-                    }
-                }
-            } else if (isCloser(open)) {
-                final char pairOpen = openerFor(open);
-                final int skipTo = caretBeforeCloser(ic, pairOpen, open);
-                if (skipTo >= 0) {
-                    try {
-                        ic.setSelection(skipTo, skipTo);
-                        sWrapDepth = -1;
-                        if (BridgeHook.DEV_AUTOPAIR_LOG) {
-                            Log.i(TAG, "closeskip: " + pairOpen + " -> caret only, setSel("
-                                    + skipTo + "," + skipTo + ")");
-                        }
-                        return true;
-                    } catch (Throwable err) {
-                        Log.w(TAG, "closeskip failed: " + err);
-                    }
-                }
-                return false;                                      // 纯闭字符：照原样上屏（老路）
+        // ---- ① 跳过已存在的闭合符（plan §2.1）----
+        // 判据只看两件事，**不做任何推导**：
+        //   1. q 记着"上一次补出的闭字符"（字符本身就存在状态里）；
+        //   2. 这次要上屏的字符正是它，且光标后紧接着的也是它。
+        // 引号那类"开==闭"的：置位时存的是 0（不参与），所以这里天然不会命中。
+        final char wantCloser = isOpener ? close : chUse;
+        if (SogouTranslator.closeSkipEnabled() && sJustPaired != 0
+                && wantCloser == sJustPaired) {
+            CharSequence afterCs = null;
+            try {
+                afterCs = ic.getTextAfterCursor(1, 0);
+            } catch (Throwable err) {
+                afterCs = null;                                    // 问不到 ⇒ 按"没这回事"处理
             }
+            final int at = cursorOffset(ic);
+            if (afterCs != null && afterCs.length() == 1
+                    && afterCs.charAt(0) == sJustPaired && at >= 0) {
+                try {
+                    ic.setSelection(at + 1, at + 1);
+                    clearCloserMark();                             // 这一格配对用完 ⇒ 清状态
+                    if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                        Log.i(TAG, "closeskip: caret only -> " + (at + 1)
+                                + " over U+" + Integer.toHexString(wantCloser));
+                    }
+                    return true;                                   // 原提交不要走：闭字符已在光标后
+                } catch (Throwable err) {
+                    Log.w(TAG, "closeskip failed: " + err);
+                }
+            }
+            clearCloserMark();                                     // §2.1：按闭字符**无条件**清位
         }
-        if (close == null) return false;                           // 既不是开字符也不是闭字符
 
-        // ---- ① 跳过已存在的闭合符：光标后侧正是它 ⇒ 只把光标移过去，不再输出 ----
-        // 判据（plan §2.1）：光标后紧接着的字符 == **将要上屏的那个字符**，
-        // 纯闭字符（不是任何配对的开字符）：到这里 closeSkip 已经判完，照原样上屏
-        if (close == null) return false;
+        if (!isOpener) return false;                               // 纯闭字符：照原样上屏（老路）
 
         // ---- ② 选区包裹 ----
         if (!SogouTranslator.wrapSelectionEnabled()) {
@@ -586,7 +574,7 @@ final class AutoPairHook {
         try {
             sel = ic.getSelectedText(0);
         } catch (Throwable err) {
-            Log.w(TAG, "pairwrap: getSelectedText threw for " + open + ": " + err);
+            Log.w(TAG, "pairwrap: getSelectedText threw for " + chUse + ": " + err);
             return false;                                          // 问不到就按老路走，不冒险
         }
         if (sel == null || sel.length() == 0) {
@@ -599,7 +587,7 @@ final class AutoPairHook {
         }
         // 插入点必须**在提交之前**取：提交之后光标前的内容就变成整串了，算不回去
         final int at = cursorOffset(ic);
-        final String openStr = String.valueOf(open);
+        final String openStr = String.valueOf(chUse);
         final String closeStr = String.valueOf(close);
         final int end = at >= 0
                 ? at + openStr.length() + sel.length() + closeStr.length() : -1;
@@ -612,11 +600,11 @@ final class AutoPairHook {
             // 1 = 相对插入文本的末尾（按协议就该落在整串之后）
             ic.commitText(openStr + sel + closeStr, 1);
             ic.endBatchEdit();
-            if (close == open) {
+            if (samePair) {
                 // 同字符对（引号）：这一格翻转已经被"选中+包裹"用掉了，
                 // 再翻一格把奇偶补回来 —— 否则下一次按引号键会出成闭引号 ✗。
                 // 只在真包成功之后做（失败就直接 return false 走老路，那一格归搜狗自己）。
-                balanceQuoteToggle(open);
+                balanceQuoteToggle(chUse);
             }
             if (end >= 0) {
                 // 光标只是收尾：**它失败也不能让包裹本身判负**。
@@ -630,9 +618,9 @@ final class AutoPairHook {
             }
             // closeSkip 的状态位：包裹之后光标就停在闭字符前，紧接着再打同一个闭字符
             // 就该"只移光标"（与物理补全那条路同一套判据）
-            sWrapDepth = end;
+            markPairInjected(samePair ? 0 : close);
             if (BridgeHook.DEV_AUTOPAIR_LOG) {
-                Log.i(TAG, "pairwrap: " + open + "…" + close + " around " + sel.length()
+                Log.i(TAG, "pairwrap: " + chUse + "…" + close + " around " + sel.length()
                         + " char(s)" + (sHwKeyDown ? " [hw]" : " [soft]"));
             }
             return true;
@@ -784,48 +772,30 @@ final class AutoPairHook {
         return 0;
     }
 
-    /** 我们刚补出闭字符的那次插入点（-1 = 没有待确认的补全）。 */
-    private static volatile int sWrapDepth = -1;
+    /**
+     * plan §2.1 的状态位 {@code q}：上一步刚补出过闭字符。
+     *
+     * <p>就用一个布尔，**不记偏移** —— 偏移在补全过程中会被挪（注入 → moveCursorLeftOne），
+     * 记它极容易记错（本轮栽过：记成开字符的位置 ⇒ `（）` 再打 `）` 判不出来 ⇒ `（））`）。
+     * plan 原本就是"只记这个事实"。
+     */
+    private static volatile char sJustPaired;
 
     /**
-     * 补出闭字符之后由 {@link #maybeInjectPair} 调用，用于 closeSkip 的状态位。
+     * 刚补出闭字符时调用：把"那个闭字符"记进 {@code q}。
      *
-     * <p>判据是"这次补完之后，紧随光标之后的还是不是那个闭字符"：
-     * <ul>
-     *   <li>例如 {@code （xxx|} 打 {@code ）} 的那种情形（光标后本来就有一个 {@code ）}）：
-     *       补进去的闭字符把原有的那个<b>顶到了光标后</b> ⇒ 位置没变 ⇒ 记下 1；</li>
-     *   <li>普通补全（真补了一个）⇒ 位置往后挪了一格 ⇒ 不记。</li>
-     * </ul>
-     * 于是"再打一次同一个闭字符就只移光标"能成立，而且只依赖"上一步是补全"这个事实 ——
-     * 光标后那格是别的普通字符时，它的编码不等于闭字符，同样不会误判。
+     * <p>plan 里 {@code q} 是个布尔，这里多存一个字符 —— 判据就不需要再推导
+     * "这次按的闭字符是谁"（那些推导正是本轮反复出错的地方）。
+     *
+     * @param closer 刚补出的闭字符；同字符串对（引号）传 0 = 不参与
      */
-    static void markPairInjected(final Object connection, final char open, final char close) {
-        if (!(connection instanceof InputConnection)) return;
-        if (close == open) return;                                 // 引号走搜狗自己的翻转，不掺和
-        final int here = cursorOffset((InputConnection) connection);
-        sWrapDepth = here >= 0 ? here : -1;
+    static void markPairInjected(final char closer) {
+        sJustPaired = closer;
     }
 
-    /**
-     * 这次按键是不是"光标后已有该闭字符，只需移光标"。
-     *
-     * @return 目标光标位置；{@code -1} = 不适用（该走原提交）
-     */
-    private static int caretBeforeCloser(final InputConnection ic, final char open, final char close) {
-        if (sWrapDepth < 0) return -1;                             // 上一步不是"刚补出一个闭字符"
-        final int at = cursorOffset(ic);
-        final CharSequence after;
-        try {
-            after = ic.getTextAfterCursor(1, 0);
-        } catch (Throwable err) {
-            return -1;
-        }
-        if (after == null || after.length() != 1 || after.charAt(0) != close) return -1;
-        final int to = at + 1;
-        if (BridgeHook.DEV_AUTOPAIR_LOG) {
-            Log.i(TAG, "closeskip: caret " + at + " -> " + to + " over existing " + close);
-        }
-        return to;
+    /** 清掉 {@code q}（plan §2.1：按下右符号要**无条件**清，避免残留）。 */
+    private static void clearCloserMark() {
+        sJustPaired = 0;
     }
 
     /**
