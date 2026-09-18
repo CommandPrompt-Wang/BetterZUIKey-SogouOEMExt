@@ -9,7 +9,7 @@
 
 [![Android](https://img.shields.io/badge/API-27%2B-green)](https://developer.android.com/about/versions/8.1) [![Xposed](https://img.shields.io/badge/Xposed-LSPosed-blue)](https://github.com/LSPosed/LSPosed) [![Java](https://img.shields.io/badge/Java-17-orange)](https://openjdk.org/projects/jdk/17/) [![License](https://img.shields.io/badge/License-GPL--3.0-orange)](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/blob/main/LICENSE)
 
-<p>把联想 OEM 版搜狗输入法（<code>29496052</code> / <code>1.0.android_pad_lenovo_2024.20260130165252</code>）的增强模块</p>
+<p>联想 OEM 版搜狗输入法（<code>29496052</code> / <code>1.0.android_pad_lenovo_2024.20260130165252</code>）的增强模块</p>
 
 </div>
 
@@ -49,26 +49,30 @@
 
 本模块通过注入搜狗 IME 进程，用搜狗自己的身份补入 subtype，并接管其语言切换链路；修正英文输入、补全自动完成功能；增加全半角切换……以此将其优化成一个相对可用的输入法。
 
+版本：`1.2.0`（`versionCode 3`）
+
 ## 功能特性
 
-- **自定义语言切换**：提供可拖拽顺序的配置界面，自定义切换序列和欲暴露的 subtype
+- **自定义语言切换**：勾选要把哪些语言**暴露给框架**（做成 subtype），切换序列交给 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey)
 - **严格模式**：屏蔽搜狗原生切换键，语言切换完全由框架管理
   - 这是一个与 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 联动的功能
 - **标点管线**：分离中英标点和全角半角状态位，允许独立切换
-- **中文态大写字母**：
-- **引号 / 括号自动关闭**：两个独立开关共用一份可编辑的匹配列表（默认 18 对）
+- **中文态大写字母**：中文态下 `Shift`+字母也整词进拼音栏，上屏时按记录还原大小写
+- **引号 / 括号自动关闭**：两个独立开关共用一份可编辑的匹配列表（默认提供 18 对）
   - 软键盘：修改搜狗原生配对，改用自定义列表
   - 物理键盘：打字即自动补闭字符，`Ctrl+Shift+9` 可临时切换开关
-- **配置热生效** —— 每 2 秒懒检查配置变化，更新配置无需重启输入法
+  - 有选区时**包裹选区**而不是替换它；光标后侧已有闭字符时**只移光标**，这和部分 IDE 行为相似
+- **完整的 …… 和 ——**：破折号/省略号直接打出两个
+- **配置热生效** —— 通过广播更新配置，另外每 5 秒懒检查配置变化，更新配置无需重启输入法
 - **与 BetterZUIKey 联动** —— 若安装了 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 会给出配置建议
 
-## 📐 工作原理
+## 工作原理
 
-模块在搜狗 IME 进程里做四件事：**注入 subtype** / **推进 marker** / **改写提交内容** / **配对与引号**。
+模块在搜狗 IME 进程里做五件事：**注入 subtype** / **推进 marker** / **改写提交内容** / **配对与引号** / **光标兜底**。
 
 ```
-模块 App（LangOrderActivity）
-    ↕ ContentProvider IPC（ConfigProvider · 每 2 秒轮询 + 签名比对）
+模块 App（MainActivity）
+    ↕ ContentProvider IPC（ConfigProvider · 每 2 秒轮询 + 签名比对）+ ConfigPoke 广播即时戳一下
 搜狗 IME 进程（BridgeHook）
     ├── SubtypeInjector   用搜狗自己的 uid 补 subtype（绕开 setAdditionalInputMethodSubtypes 的闸门）
     ├── SogouTranslator   marker 推进 / 语言切换命令 / 快捷键与热键 / 配置热重载
@@ -76,10 +80,13 @@
     └── AutoPairHook      配对三件套：闸门 UU.a · 自定义表 Yja.a · 引号标志位 KG.d
                           · 软键盘：闸门放行，由搜狗按自定义表提交开+闭
                           · 物理键盘：闸门拦住搜狗，改由模块注入闭字符并把光标移进中间
+                          · 有选区：不让原提交走，改由模块提交「开 + 选区 + 闭」
+                          · 闭合符已在光标后：只把光标移过去（按过闭字符 / 用户点过别处即恢复）
 ```
 
 - 自定义表若留空则继续走搜狗原有的配对规则
 - 中文引号由 `KG.d` 决定，每按一次就翻转 `KG.e`/`KG.f`。模块一次上屏两个字符，就得多替它翻一格，否则下一次按键只吐出一个 `”`
+- 配对之后的光标由搜狗的 `Qja.setSelection` 定：它那次是**排队**执行的、而且**比模块返回还晚**，所以只能改写它那次请求的参数，不能自己再设一遍
 - subtype 顺序 = 框架 enabled subtype 列表顺序
 - 若由于版本更新导致内部符号变化则退回合成 Shift / 走默认表，避免造成崩溃
 - dex 级逆向、踩坑与实测数据全部整理在 **[PRINCIPLE.md](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/blob/main/PRINCIPLE.md)**
@@ -97,7 +104,7 @@
    > 模块按**这个版本**的搜狗内部符号实现（实测 + 逆向均基于它）。其他版本可能符号不同，届时功能可能会降级（而不会崩溃），但请以本表版本为准。
 1. 在 [Releases](https://github.com/CommandPrompt-Wang/BetterZUIKey-SogouOEMExt/releases) 下载 APK 并安装
 2. LSPosed Manager 里启用模块即可 —— 作用域由模块**静态声明**无需也无法手动勾选
-3. 打开模块 App，拖好语言顺序与分隔线
+3. 打开模块 App，勾好要暴露给框架的语言
 4. 杀死输入法进程
 5. 多次进入/退出编辑以触发键盘弹出
 
@@ -118,9 +125,9 @@ cd BetterZUIKey-SogouOEMExt
 
 ## 使用方法
 
-主页就是语言顺序：拖动卡片改变切换顺序，分隔线上下分别决定接入/不接入框架（不接入则无法进入快捷键轮换）
+主页只决定「暴露哪些语言」：勾哪个，哪个语言才会被做成 subtype 交给框架；**顺序不在这里**（那是 [BetterZUIKey](https://github.com/CommandPrompt-Wang/BetterZUIKey) 的事）。
 
-排序功能下面的开关与热键：
+下面每项一张卡片，开关与热键：
 
 | 功能 | 解释 | 默认值 |
 |------|------|--------|
@@ -129,11 +136,16 @@ cd BetterZUIKey-SogouOEMExt
 | 大写字母进拼音栏 | 中文态下 `Shift`+字母也整词进拼音，上屏时按记录还原大小写<br/>切换快捷键：`Ctrl+Shift+9` | 开 |
 | 引号/括号自动补全 | 软键盘打 `（` → 自动补 `）` 并把光标移进中间；配对规则来自「编辑匹配列表」 | 关 |
 | 物理键盘自动补全 | 物理键盘打 `（` → 模块注入 `）` 并移光标；`Ctrl+Shift+9` 可临时开关 | 关 |
+| 选区自动补全 | 选中文本时用配对标点包住（`abc` → `（abc）`），而不是替换掉选区 | 开 |
+| 跳过已存在的闭合符号 | 光标后侧已有闭合符时只移光标、不再多出一个；手动移动光标后恢复正常闭合 | 开 |
+| 完整的 `……` 和 `——` | 输入 `—` / `…` 时输出两个（关闭则恢复搜狗原生单出） | 开 |
 | 全角模式 | 标点与数字全部输出全角（`，` `１`），关闭则半角<br/>切换快捷键：`Shift+Space` | 开 |
 | 中英文标点 | 中文态下也输出 ASCII 标点（英文标点模式）<br/>切换快捷键：`Ctrl+.` | 开 |
 | 只响应系统框架语言切换消息 | 严格模式：屏蔽搜狗原生切换键，只接受框架信号 | 关 |
 | 条目「编辑匹配列表」 | 自定义「前-后」配对串，长度必须是偶数；留空 = 用输入法默认匹配规则 | 18 对建议值 |
 | 条目「原样输出斜杠」 | 搜狗把 `/` 和 `\` 都输出成 `、`；可以选一个原样保留 | 关 |
+
+三个状态位（全角 / 中英标点 / 物理补全）才有快捷键；其余都是纯开关，改完即时生效。
 
 日志：
 
@@ -161,20 +173,22 @@ provider: dump self-check = ok (pairMap=18 pairs)
 
 ```
 app/src/main/java/moe/lovefirefly/bzk/sogouoemext/
-├── BridgeHook.java         # Xposed 入口 + 开发期开关（DEV_*）
-├── SogouTranslator.java    # 核心：subtype 注入时机 / marker 推进 / 快捷键与热键 / 配置轮询
+├── BridgeHook.java          # Xposed 入口 + 开发期开关（DEV_*）
+├── SogouTranslator.java     # 核心：subtype 注入时机 / marker 推进 / 快捷键与热键 / 配置轮询
 ├── SubtypeInjector.java     # 用搜狗身份补 subtype（绕开 uid 闸门）
 ├── PunctPipeline.java       # 标点管线：语义层（中/英/数字/斜杠）→ 形式层（全/半角）
-├── AutoPairHook.java       # 引号括号：UU.a 闸门 · Yja.a 自定义表 · KG.d 引号标志位
-│                             #   软键盘放行搜狗配对；物理键盘拦住搜狗、改由模块注入闭字符
-├── LangConfig.java         # 配置：dump / parseDump / signature，配对串解析成 Map
-├── LangSpec.java          # 语言规格常量（顺序、分隔线、默认值）
+├── AutoPairHook.java        # 引号括号：UU.a 闸门 · Yja.a 自定义表 · KG.d 引号标志位
+│                            #   软键盘放行搜狗配对；物理键盘拦住搜狗、改由模块注入闭字符
+│                            #   有选区则包裹；闭字符已在光标后则只移光标（含 Qja.setSelection 改写）
+├── LangConfig.java          # 配置：dump / parseDump / signature，配对串解析成 Map
+├── LangSpec.java            # 语言规格常量（语言清单、默认暴露集合、默认值）
 ├── ConfigProvider.java      # ContentProvider：App → 模块 的配置通道（含 UID 白名单）
-├── LangOrderActivity.java   # 首页：语言顺序 + 所有开关（launcher）
-├── InfoActivity.java         # 「原理 / 说明」页
+├── ConfigPoke.java          # 配置即时生效：App 发一条不带数据的广播，模块立刻重读
+├── MainActivity.java        # 首页：语言暴露勾选 + 所有开关（launcher）
+├── InfoActivity.java        # 「原理 / 说明」页
 ├── InfoText.java            # 说明文案
-├── Sogou*Probe.java       # 开发期探针：命令注册表 / 状态字段 / 按键路径 / 标点提交点 / subtype 写回
-└── SogouStateWatch.java   # 开发期探针：每 500ms 采样 LUa.F()，只在变化时打日志
+├── Sogou*Probe.java         # 开发期探针：命令注册表 / 状态字段 / 按键路径 / 标点提交点 / subtype 写回
+└── SogouStateWatch.java     # 开发期探针：每 500ms 采样 LUa.F()，只在变化时打日志
 ```
 
 
