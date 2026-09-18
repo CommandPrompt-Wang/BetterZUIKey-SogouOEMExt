@@ -118,6 +118,9 @@ public final class SogouTranslator {
     /** 最近一次提交出去的最后一个字符（智能编号要判断"前一个是数字"）。 */
     private static volatile char sLastCommittedChar;
 
+    /** {@link #applyPipeline} 上一次是否走了"斜杠键消歧"分支（只给那行诊断日志用）。 */
+    private static volatile boolean sLastSlashHandled;
+
     /** 本次 Shift 是否被用于输入大写字母（用于吞掉随后那次 Shift 抬起）。 */
     private static volatile boolean sShiftUsedForLetter;
 
@@ -452,6 +455,89 @@ public final class SogouTranslator {
     }
 
     /**
+     * 语义层 + 形式层：把一次提交按当前配置塑形成真正要上屏的文本，并落状态
+     * （{@code sLastCommittedChar}）。
+     *
+     * <p><b>顺序就是规格</b>：{@code {开关3; 开关1，3 优先于1} → 智能编号 → 完整形 → 全角/半角}。
+     *
+     * <p>从 {@code installPunctuationRewrite} 的拦截器里**原样**提出来，让"探针/单测干跑"
+     * （{@link #previewCommit}）与真正上屏走同一段代码 —— 两边各写一份迟早会分叉
+     * （比如"预览按半角配对、实际上屏是全角"）。
+     *
+     * @param commit 只有 {@code commitText} 那条路才做"智能编号"（setComposingText 是未定稿的预览）
+     */
+    private static String transformCommit(final LangConfig cfg, final String src, final boolean commit) {
+        final String out = applyPipeline(cfg, src, commit);
+        sLastCommittedChar = out.isEmpty() ? 0 : out.charAt(out.length() - 1);
+        return out;
+    }
+
+    /**
+     * 干跑一次管线：只算出"这个字符会变成什么"，<b>不改任何状态</b>。
+     *
+     * <p>只对**单字符**开放（配对的开字符都是单字符）；多字符返回 {@code null} = "别预览"：
+     * 多字符在管线里会经过中途态（例如 {@code `} 先被语义层转成 {@code ·}、再被形式层
+     * 全角成 {@code ｀}），逐字符干跑的结果不可靠。
+     */
+    static String previewCommit(final LangConfig cfg, final CharSequence in) {
+        if (cfg == null || in == null || in.length() != 1) return null;
+        return applyPipeline(cfg, in.toString(), true);
+    }
+
+    /**
+     * 管线本体。只写 {@code sLastSlashHandled}（那是一次"这次走了哪个分支"的记录，
+     * 供日志用）；{@code sLastCommittedChar} 由调用方决定要不要落 ——
+     * 干跑不该改它，一次"没有真的经过管线"的预览不能影响智能编号。
+     */
+    private static String applyPipeline(final LangConfig cfg, final String src, final boolean commit) {
+        String out = src;
+        // 语义层（顺序：斜杠键 → 英/中文标点）
+        // 搜狗把 / 和 \ 都出成 、；这里按"上一个物理按键"区分，二选一原样输出：
+        //   选 \ → 按 \ 出 \，按 / 出 、
+        //   选 /  → 按 / 出 /，按 \ 出 、
+        //   关    → 两个都出 、（英文标点模式下再由下面的分支转成 ASCII）
+        boolean slashHandled = false;
+        if (cfg.slashMode != 0 && out.indexOf('、') >= 0) {
+            final char want = (cfg.slashMode == 1) ? '/' : '\\';
+            slashHandled = true;
+            if (sLastSlashKey == want) {
+                out = out.replace('、', want);
+            }
+            // 另一个键：保持 、
+        }
+        // 英文态一律英文标点；中文态下开关3 优先于开关1
+        final boolean english = rawLanguageState() == 1;
+        if (!slashHandled) {
+            if (currentEnPunct() || english) {
+                final String r = PunctPipeline.toAsciiPunct(out, sLastSlashKey);
+                if (r != null) out = r;
+            } else if (cfg.smartPunct) {
+                final String r = PunctPipeline.toChinesePunct(out);
+                if (r != null) out = r;
+            }
+        }
+        // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）
+        if (commit && cfg.smartNumbering
+                && sLastCommittedChar >= '0' && sLastCommittedChar <= '9') {
+            if ("。".equals(out)) out = ".";
+            else if ("）".equals(out)) out = ")";
+        }
+        // 「完整的 …… 和 ——」：开启时把 — / … 的连续段归一成两个；
+        // 关闭则原样放行（恢复搜狗原生的单出）。只在中文标点这一侧生效
+        if (cfg.longMarks && !slashHandled && !(currentEnPunct() || english)) {
+            final String lm = PunctPipeline.toLongMarks(out, true);
+            if (lm != null) out = lm;
+        }
+        // 形式层：全角 / 半角
+        final String w = currentFullWidth()
+                ? PunctPipeline.toFullWidth(out)
+                : PunctPipeline.toHalfWidth(out);
+        if (w != null) out = w;
+        sLastSlashHandled = slashHandled;
+        return out;
+    }
+
+    /**
      * 标点管线钩子：{@code {开关3;开关1（3 优先）} -> 开关2}。
      *
      * <p>搜狗的中文标点映射是硬编码的、发生在我们之前，所以：
@@ -506,52 +592,17 @@ public final class SogouTranslator {
                             // 只有上屏才结束这一段；空格等不能中途清记录，
                             // 否则 "dance hello" 里前面那段的大写意图会被吃掉。
                             if (commit) onCompositionEnded();
-                            // 语义层（顺序：斜杠键 → 英/中文标点）
-                            // 搜狗把 / 和 \ 都出成 、；这里按"上一个物理按键"区分，二选一原样输出：
-                            //   选 \ → 按 \ 出 \，按 / 出 、
-                            //   选 /  → 按 / 出 /，按 \ 出 、
-                            //   关    → 两个都出 、（英文标点模式下再由下面的分支转成 ASCII）
-                            boolean slashHandled = false;
-                            if (cfg.slashMode != 0 && out.indexOf('、') >= 0) {
-                                final char want = (cfg.slashMode == 1) ? '/' : '\\';
-                                slashHandled = true;
-                                if (sLastSlashKey == want) {
-                                    out = out.replace('、', want);
-                                }
-                                // 另一个键：保持 、
-                            }
-                            // 英文态一律英文标点；中文态下开关3 优先于开关1
-                            final boolean english = rawLanguageState() == 1;
-                            if (!slashHandled) {
-                                if (currentEnPunct() || english) {
-                                    final String r = PunctPipeline.toAsciiPunct(out, sLastSlashKey);
-                                    if (r != null) out = r;
-                                } else if (cfg.smartPunct) {
-                                    final String r = PunctPipeline.toChinesePunct(out);
-                                    if (r != null) out = r;
-                                }
-                            }
-                            // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）
-                            if (cfg.smartNumbering
-                                    && sLastCommittedChar >= '0' && sLastCommittedChar <= '9') {
-                                if ("。".equals(out)) out = ".";
-                                else if ("）".equals(out)) out = ")";
-                            }
-                            // 「完整的 …… 和 ——」：开启时把 — / … 的连续段归一成两个；
-                            // 关闭则原样放行（恢复搜狗原生的单出）。只在中文标点这一侧生效
-                            if (cfg.longMarks && !slashHandled
-                                    && !(currentEnPunct() || english)) {
-                                final String lm = PunctPipeline.toLongMarks(out, true);
-                                if (lm != null) out = lm;
-                            }
-                            // 形式层：全角 / 半角
+                            // 语义层 + 形式层（与预览共用同一段）
+                            out = transformCommit(cfg, out, commit);
                             final boolean full = currentFullWidth();
-                            final String w = full
-                                    ? PunctPipeline.toFullWidth(out)
-                                    : PunctPipeline.toHalfWidth(out);
-                            if (w != null) out = w;
-                            sLastCommittedChar = out.isEmpty() ? 0
-                                    : out.charAt(out.length() - 1);
+                            // 有选区 ⇒ 把选区包起来（必须在 proceed **之前**问：
+                            // 开字符一旦上屏，选区就被顶掉了，之后再也问不到 ✗）。
+                            // 传的是管线之后的 out —— 括号必须与**真正上屏的那个字符**
+                            // 配对，否则全角/半角与智能标点会各配一套（gb 那边踩过）。
+                            if (commit
+                                    && AutoPairHook.maybeWrapSelection(chain.getThisObject(), out)) {
+                                return Boolean.TRUE;
+                            }
                             final Object result;
                             if (out.equals(src)) {
                                 result = chain.proceed();
@@ -560,8 +611,8 @@ public final class SogouTranslator {
                                 args[0] = out;
                                 Log.i(TAG, "punct: " + src + " -> " + out
                                         + (full ? " [full]" : " [half]")
-                                        + (slashHandled ? " [slash=" + cfg.slashMode + "]"
-                                           : currentEnPunct() || english ? " [en]"
+                                        + (sLastSlashHandled ? " [slash=" + cfg.slashMode + "]"
+                                           : currentEnPunct() || rawLanguageState() == 1 ? " [en]"
                                            : cfg.smartPunct ? " [cn]" : " [raw]"));
                                 result = chain.proceed(args);
                             }

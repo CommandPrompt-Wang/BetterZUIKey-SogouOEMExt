@@ -366,6 +366,75 @@ final class AutoPairHook {
     }
 
     /**
+     * **有选区时把选区包起来**（照 gb {@code AutoPair.maybeWrapSelection} 那一套）：
+     * 选中 {@code abc} 打 {@code （} ⇒ {@code （abc）}，光标落在闭字符之后。
+     *
+     * <p>必须在**原提交之前**调用：{@code getSelectedText(0)} 只有那一刻还问得到 ——
+     * 开字符一旦上屏，选区就被顶掉了，之后再也问不到 ✗（gb 那边踩过这个坑）。
+     * 命中即由本方法整串提交，调用方<b>不要再走原提交</b>。
+     *
+     * <p><b>参数用的是"管线之后的字符"</b>（{@code SogouTranslator} 传的是
+     * {@code transformCommit} 的结果，不是键位字符）。这一条正是边界 §4
+     * 「比较用实际上屏字符」的落地：中文态按 {@code (} 得到的是全角 {@code （}，
+     * 拿半角 {@code (} 去查配对表会配成半角的 {@code )} ⇒ {@code （abc)} 这种混用。
+     *
+     * <p>门控与老路一致：物理键盘看功能 9（功能开关 && Ctrl+Shift+9 状态位），
+     * 软键盘看功能 S。
+     *
+     * @return {@code true} = 已包好（调用方别再提交）；{@code false} = 没选区 / 开关关着 /
+     *         不是开字符 / 选区太大 / 出错了 ⇒ 一律回退老路
+     */
+    static boolean maybeWrapSelection(final Object connection, final CharSequence resolved) {
+        if (connection == null || resolved == null || resolved.length() != 1) return false;
+        if (!(connection instanceof InputConnection)) return false;
+        if (sHwKeyDown ? !SogouTranslator.physCompleteActive()
+                       : !SogouTranslator.autoPairEnabled()) {
+            return false;                                          // 开关关着 → 老路
+        }
+        final char open = resolved.charAt(0);
+        final Character close = SogouTranslator.autoPairMap().get(open);
+        if (close == null) return false;                            // 闭字符不是 key ⇒ 方向性天然成立
+
+        final InputConnection ic = (InputConnection) connection;
+        final CharSequence sel;
+        try {
+            sel = ic.getSelectedText(0);
+        } catch (Throwable err) {
+            return false;                                          // 问不到就按老路走，不冒险
+        }
+        if (sel == null || sel.length() == 0) return false;
+        if (sel.length() > 500) {                                   // 超大选区不重提交（避免卡顿）
+            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                Log.i(TAG, "pairwrap: skipped, selection too long (" + sel.length() + ")");
+            }
+            return false;
+        }
+        try {
+            sInjecting.set(Boolean.TRUE);
+            ic.beginBatchEdit();
+            // 1 = 光标落在整串之后（与 gb 同：不玩"把光标挪回中间"那套）
+            ic.commitText(String.valueOf(open) + sel + close, 1);
+            ic.endBatchEdit();
+            if (close == open) {
+                // 同字符对（引号）：这一格翻转已经被"选中+包裹"用掉了，
+                // 再翻一格把奇偶补回来 —— 否则下一次按引号键会出成闭引号 ✗。
+                // 只在真包成功之后做（失败就直接 return false 走老路，那一格归搜狗自己）。
+                balanceQuoteToggle(open);
+            }
+            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                Log.i(TAG, "pairwrap: " + open + "…" + close + " around " + sel.length()
+                        + " char(s)" + (sHwKeyDown ? " [hw]" : " [soft]"));
+            }
+            return true;
+        } catch (Throwable err) {
+            Log.w(TAG, "pairwrap failed: " + err);
+            return false;                                          // 失败就让原提交照常走
+        } finally {
+            sInjecting.set(Boolean.FALSE);
+        }
+    }
+
+    /**
      * 把光标左移一格（落在刚补上的闭字符之前）。
      *
      * <p>只有能拿到"光标前的完整文本"时才移动：{@code getTextBeforeCursor} 返回的
