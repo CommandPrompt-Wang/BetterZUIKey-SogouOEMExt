@@ -278,7 +278,10 @@ public class MainActivity extends AppCompatActivity {
         tv.setPadding(0, 0, 0, pad / 4);
 
         final Runnable refresh = () -> {
-            final boolean featureOn = prefs.getBoolean(featureKey, featureDefault);
+            // 注意：不能读字段 prefs —— 本方法在 onCreate 里被调用时它还没赋值（踩过 ✗）
+            final android.content.SharedPreferences cfgPrefs =
+                    getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
+            final boolean featureOn = cfgPrefs.getBoolean(featureKey, featureDefault);
             final boolean st = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                     .getBoolean(statusKey, statusDefault);
             tv.setText(hintPrefix + "\t当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
