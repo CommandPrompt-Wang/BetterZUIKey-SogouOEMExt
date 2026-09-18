@@ -305,7 +305,9 @@ public class MainActivity extends AppCompatActivity {
                     ? cfgPrefs.getBoolean(wantKey, statusDefault)
                     : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                             .getBoolean(statusKey, statusDefault);
-            cfgPrefs.edit().putBoolean(wantKey, !now).apply();
+            final long seq = cfgPrefs.getLong(LangConfig.KEY_WANT_SEQ, 0L) + 1;
+            cfgPrefs.edit().putBoolean(wantKey, !now)
+                    .putLong(LangConfig.KEY_WANT_SEQ, seq).apply();
             for (Runnable r : statusRefreshers) r.run();
             android.widget.Toast.makeText(this, title + "：" + (!now ? onText : offText),
                     android.widget.Toast.LENGTH_SHORT).show();

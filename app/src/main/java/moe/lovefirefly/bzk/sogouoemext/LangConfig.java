@@ -213,13 +213,16 @@ final class LangConfig {
                 + (sp.contains(KEY_WANT_ENP)
                         ? "&" + KEY_WANT_ENP + "=" + sp.getBoolean(KEY_WANT_ENP, false) : "")
                 + (sp.contains(KEY_WANT_PHYS)
-                        ? "&" + KEY_WANT_PHYS + "=" + sp.getBoolean(KEY_WANT_PHYS, true) : "");
+                        ? "&" + KEY_WANT_PHYS + "=" + sp.getBoolean(KEY_WANT_PHYS, true) : "")
+                + "&" + KEY_WANT_SEQ + "=" + sp.getLong(KEY_WANT_SEQ, 0L);
     }
 
     /** App 侧「长按标题应急切换」写的期望状态位（键名与 App 侧一致）。 */
     static final String KEY_WANT_FULL = "wantFullwidth";
     static final String KEY_WANT_ENP = "wantEnPunct";
     static final String KEY_WANT_PHYS = "wantPhysComplete";
+    /** 期望值的序号：只认比上次处理过的更新的一条（否则热键改回去会被旧请求"纠正"回来 ✗）。 */
+    static final String KEY_WANT_SEQ = "wantSeq";
 
     /**
      * 只挑「期望状态位」三个键出来（有才返回）。
@@ -239,6 +242,18 @@ final class LangConfig {
             }
         }
         return out;
+    }
+
+    /** 解析期望值序号（0 = 没有/老格式 ⇒ 调用方应忽略整批期望值）。 */
+    static long parseWantSeq(String dump) {
+        if (dump == null) return 0L;
+        for (String kv : dump.split("&")) {
+            final int i = kv.indexOf('=');
+            if (i > 0 && KEY_WANT_SEQ.equals(kv.substring(0, i))) {
+                try { return Long.parseLong(kv.substring(i + 1)); } catch (Throwable t) { return 0L; }
+            }
+        }
+        return 0L;
     }
 
     /** 配对串编解码：只做百分号转义，避免其中的 & 与 = 破坏配置行格式。 */

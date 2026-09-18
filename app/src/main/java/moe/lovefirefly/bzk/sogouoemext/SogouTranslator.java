@@ -210,8 +210,14 @@ public final class SogouTranslator {
      *
      * <p>只在值真的不同时写，写完镜像回 App（否则 App 那边的「当前状态」会停在旧值）。
      */
-    private static void applyWants(java.util.Map<String, Boolean> wants) {
+    private static void applyWants(String raw, java.util.Map<String, Boolean> wants) {
         if (wants == null || wants.isEmpty()) return;
+        // 一次性：只认比上次处理过的更新的序号；没有序号（老格式/无请求）一律忽略
+        final long seq = LangConfig.parseWantSeq(raw);
+        final android.content.SharedPreferences sp0 = statePrefs();
+        final long last = sp0 == null ? 0L : sp0.getLong(LangConfig.KEY_WANT_SEQ, 0L);
+        if (seq <= last) return;
+        if (sp0 != null) sp0.edit().putLong(LangConfig.KEY_WANT_SEQ, seq).apply();
         final android.content.SharedPreferences sp = statePrefs();
         final android.content.SharedPreferences.Editor e = sp != null ? sp.edit() : null;
         boolean dirty = false;
@@ -787,7 +793,7 @@ public final class SogouTranslator {
         sPairMap = cfg.pairMap;
         sPhysComplete = cfg.physComplete;
         // App 侧「长按标题应急切换」的期望值（有才应用；应用完顺带镜像回 App）
-        applyWants(LangConfig.parseWants(raw));
+        applyWants(raw, LangConfig.parseWants(raw));
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
         // （否则 sStrict 永远停在会话启动时读到的那个值）
         final boolean strictNow = BridgeHook.ENABLE_STRICT && cfg.strict;
