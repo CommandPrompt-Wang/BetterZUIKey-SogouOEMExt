@@ -599,8 +599,10 @@ public final class SogouTranslator {
                             // 开字符一旦上屏，选区就被顶掉了，之后再也问不到 ✗）。
                             // 传的是管线之后的 out —— 括号必须与**真正上屏的那个字符**
                             // 配对，否则全角/半角与智能标点会各配一套（gb 那边踩过）。
+                            // 第三个参数是"这一次原本要提交的整串"：长按 z 的符号菜单
+                            // 会一次提交 （） 两个字，那条路只有靠它才认得出是成对提交。
                             if (commit
-                                    && AutoPairHook.maybeWrapSelection(chain.getThisObject(), out)) {
+                                    && AutoPairHook.maybeWrapSelection(chain.getThisObject(), out, src)) {
                                 return Boolean.TRUE;
                             }
                             final Object result;

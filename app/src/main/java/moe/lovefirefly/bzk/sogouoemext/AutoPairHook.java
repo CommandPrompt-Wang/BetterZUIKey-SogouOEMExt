@@ -381,39 +381,103 @@ final class AutoPairHook {
      * <p>门控与老路一致：物理键盘看功能 9（功能开关 && Ctrl+Shift+9 状态位），
      * 软键盘看功能 S。
      *
+     * <p>这条是"只提交了单个开字符"的那一路；搜狗另外还有**一次提交一整对**
+     * 的输入方式（长按 z 的符号菜单），见下面的三参重载。
+     *
      * @return {@code true} = 已包好（调用方别再提交）；{@code false} = 没选区 / 开关关着 /
      *         不是开字符 / 选区太大 / 出错了 ⇒ 一律回退老路
      */
     static boolean maybeWrapSelection(final Object connection, final CharSequence resolved) {
-        if (connection == null || resolved == null || resolved.length() != 1) return false;
+        return maybeWrapSelection(connection, resolved, null);
+    }
+
+    /**
+     * 同上，外加**成对提交**这一路。
+     *
+     * <p>搜狗的不同输入方式提交开字符的方式不一样（真机日志，2026-09-18）：
+     * <ul>
+     *   <li>物理键盘 / 符号箱：先提交单个 {@code （}，闭字符由我们补 ⇒ 走 {@link #maybeWrapSelection(Object, CharSequence)}；</li>
+     *   <li><b>长按 z 的符号菜单（软键盘）：直接把 {@code （）} 两个字一起提交</b> ⇒
+     *       单选字符那条判据是"不是单个字符"就把整串当拼音/文本放过了，于是<b>只触发自动匹配、不包裹</b> ✗。</li>
+     * </ul>
+     *
+     * @param pair 提交的整串；只有它<b>正好是配对表里的一对</b>（首字符是开、第二字符正是它的闭字符）
+     *             才会被当成"成对提交"处理，其余（拼音串、多字词、多字符标点）一律放行
+     */
+    static boolean maybeWrapSelection(final Object connection, final CharSequence resolved,
+                                      final CharSequence pair) {
+        if (connection == null) return false;
         if (!(connection instanceof InputConnection)) return false;
+
+        // 先按单个开字符判定；不成立再看它是不是"一整个配对"
+        char open = 0;
+        Character close = null;
+        if (resolved != null && resolved.length() == 1) {
+            open = resolved.charAt(0);
+            close = SogouTranslator.autoPairMap().get(open);
+        }
+        if (close == null) {
+            open = 0;
+            close = null;
+            if (pair != null && pair.length() == 2) {
+                final char a = pair.charAt(0);
+                final Character b = SogouTranslator.autoPairMap().get(a);
+                // 第二字符必须**正是**它配对的闭字符：这样 "（（"、"（【" 之类的多字符
+                // 标点串都不会被误当成一对
+                if (b != null && b == pair.charAt(1)) {
+                    open = a;
+                    close = b;
+                }
+            }
+        }
+        if (close == null) {
+            logWrapSkip(resolved, "not-opener");
+            return false;
+        }
+
         if (sHwKeyDown ? !SogouTranslator.physCompleteActive()
                        : !SogouTranslator.autoPairEnabled()) {
+            logWrapSkip(resolved, sHwKeyDown ? "off:physComplete" : "off:autoPair");
             return false;                                          // 开关关着 → 老路
         }
-        final char open = resolved.charAt(0);
-        final Character close = SogouTranslator.autoPairMap().get(open);
-        if (close == null) return false;                            // 闭字符不是 key ⇒ 方向性天然成立
 
         final InputConnection ic = (InputConnection) connection;
         final CharSequence sel;
         try {
             sel = ic.getSelectedText(0);
         } catch (Throwable err) {
+            Log.w(TAG, "pairwrap: getSelectedText threw for " + open + ": " + err);
             return false;                                          // 问不到就按老路走，不冒险
         }
-        if (sel == null || sel.length() == 0) return false;
-        if (sel.length() > 500) {                                   // 超大选区不重提交（避免卡顿）
-            if (BridgeHook.DEV_AUTOPAIR_LOG) {
-                Log.i(TAG, "pairwrap: skipped, selection too long (" + sel.length() + ")");
-            }
+        if (sel == null || sel.length() == 0) {
+            logWrapSkip(resolved, "no-selection");
             return false;
         }
+        if (sel.length() > 500) {                                   // 超大选区不重提交（避免卡顿）
+            logWrapSkip(resolved, "sel-too-long:" + sel.length());
+            return false;
+        }
+        // 插入点必须**在提交之前**取：提交之后光标前的内容就变成整串了，算不回去
+        final int at = cursorOffset(ic);
+        final String openStr = String.valueOf(open);
+        final String closeStr = String.valueOf(close);
         try {
             sInjecting.set(Boolean.TRUE);
             ic.beginBatchEdit();
-            // 1 = 光标落在整串之后（与 gb 同：不玩"把光标挪回中间"那套）
-            ic.commitText(String.valueOf(open) + sel + close, 1);
+            // 1 = 相对插入文本的末尾（按协议就该落在整串之后）
+            ic.commitText(openStr + sel + closeStr, 1);
+            // 可是**光靠那个参数不够**：搜狗会按它自己的内部光标模型再挪一次，
+            // 结果光标停在闭字符前（真机 19:03：`（1234）` 打成 `（|1234）` ✗）。
+            // 所以提交完再显式 `setSelection` 到闭字符之后 —— 模块里物理补全
+            // 那条路（moveCursorLeftOne）就是靠显式 setSelection 才准的。
+            // 放在 batchEdit 里，确保与搜狗的编辑同批、顺序不被插队。
+            if (at >= 0) {
+                final int end = at + openStr.length() + sel.length() + closeStr.length();
+                ic.setSelection(end, end);
+                if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                    Log.i(TAG, "pairwrap: cursor " + at + " -> " + end);
+                }
+            }
             ic.endBatchEdit();
             if (close == open) {
                 // 同字符对（引号）：这一格翻转已经被"选中+包裹"用掉了，
@@ -432,6 +496,44 @@ final class AutoPairHook {
         } finally {
             sInjecting.set(Boolean.FALSE);
         }
+    }
+
+    /**
+     * 光标的绝对偏移；拿不准时返回 {@code -1}（宁可不动，也不要用假偏移把光标跳错地方）。
+     *
+     * <p>{@code getTextBeforeCursor} 返回的<b>长度就是光标前的字符数</b>，但它有上限 ——
+     * 一旦触顶说明拿到的不是全量，此时那个长度只是"上限"而不是真实偏移。
+     */
+    private static int cursorOffset(final InputConnection ic) {
+        final int cap = 4096;
+        try {
+            final CharSequence before = ic.getTextBeforeCursor(cap, 0);
+            if (before == null) return -1;
+            if (before.length() >= cap) return -1;                  // 触顶 ⇒ 不是全量
+            return before.length();
+        } catch (Throwable err) {
+            return -1;
+        }
+    }
+
+    /**
+     * 「为什么没包」的诊断：把进到 {@code maybeWrapSelection} 之后每一个 {@code return false}
+     * 的理由打出来。
+     *
+     * <p>为什么值得单独有：包装失败的每一条分支都是<b>静默</b>的（悄悄回退老路），
+     * 真机上看到的现象一律是"照旧补了一对"，光看现象分不清是"没选区"、"不是开字符"、
+     * "开关没生效"还是"取选区失败"——只有打出来才知道该改哪一条。
+     */
+    private static void logWrapSkip(final CharSequence resolved, final String why) {
+        if (!BridgeHook.DEV_AUTOPAIR_LOG) return;
+        final StringBuilder hex = new StringBuilder();
+        if (resolved != null) {
+            for (int i = 0; i < resolved.length() && i < 4; i++) {
+                hex.append(String.format("%04X ", (int) resolved.charAt(i)));
+            }
+        }
+        Log.i(TAG, "pairwrap-skip: " + why + " ch=[" + resolved + "] codes="
+                + hex.toString().trim() + (sHwKeyDown ? " [hw]" : " [soft]"));
     }
 
     /**
