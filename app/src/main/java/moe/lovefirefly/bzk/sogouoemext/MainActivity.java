@@ -74,11 +74,11 @@ public class MainActivity extends AppCompatActivity {
         title.setText("搜狗增强");
         title.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_HeadlineSmall);
-        title.setPadding(pad * 2, pad * 2, pad * 2, pad / 2);
+        title.setPadding(0, pad * 2, 0, pad / 2);
 
         final LinearLayout strictBox = new LinearLayout(this);
         strictBox.setOrientation(LinearLayout.VERTICAL);
-        strictBox.setPadding(pad * 2, pad / 2, pad * 2, 0);
+        strictBox.setPadding(0, pad / 2, 0, 0);
 
         // 严格模式：与其它设置项一样**一张卡片**（左列标题+说明、右侧无文字开关）
         strictSwitch = new MaterialSwitch(this);
@@ -222,6 +222,8 @@ public class MainActivity extends AppCompatActivity {
         // 内容全部放进 ScrollView：屏幕矮的时候，下面的开关不会再挡住列表
         final LinearLayout content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
+        // 页边距只在这里给一次：首页每一项（标题 / 入口卡 / 所有设置卡）都直接或间接挂在 content 下
+        content.setPadding(pad * 2, 0, pad * 2, 0);
         content.addView(title);
         addExposeEntry(content);       // 「选择在输入法框架中显示的语言」→ 子页面
         content.addView(strictBox);
@@ -395,6 +397,19 @@ public class MainActivity extends AppCompatActivity {
                 .TextAppearance_Material3_BodyLarge);
         label.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface));
 
+        final TextView desc = new TextView(this);
+        desc.setText("将 subtype 暴露给系统");
+        desc.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        desc.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        desc.setPadding(0, 0, 0, pad / 4);
+
+        // 左列「标题 + 说明」，右侧箭头 —— 与其它设置项的版式一致（不是自己编的宽度）
+        final LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(label);
+        texts.addView(desc);
+
         final TextView arrow = new TextView(this);
         arrow.setText("›");
         arrow.setTextSize(20);
@@ -403,7 +418,7 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        row.addView(label, new LinearLayout.LayoutParams(
+        row.addView(texts, new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         row.addView(arrow);
         box.addView(row);
