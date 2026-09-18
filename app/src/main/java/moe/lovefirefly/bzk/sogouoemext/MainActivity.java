@@ -275,9 +275,15 @@ public class MainActivity extends AppCompatActivity {
             String featureKey, boolean featureDefault,
             String statusKey, boolean statusDefault, String onText, String offText,
             String wantKey) {
+        // 左边一列（标题 + 说明，彼此左对齐）；开关无文字放右边、垂直居中 —— 与 BZK 的行同构
         final MaterialSwitch sw = new MaterialSwitch(this);
-        sw.setText(title);
-        sw.setPadding(0, 0, 0, pad / 4);
+        sw.setPadding(pad / 2, 0, 0, 0);
+
+        final TextView titleTv = new TextView(this);
+        titleTv.setText(title);
+        titleTv.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyLarge);
+        titleTv.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface));
 
         final TextView tv = new TextView(this);
         tv.setTextAppearance(com.google.android.material.R.style
@@ -320,9 +326,20 @@ public class MainActivity extends AppCompatActivity {
             sToast.show();
             return true;
         };
+        final LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(titleTv);
+        texts.addView(tv);
+
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.addView(texts, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(sw);
+
         final LinearLayout box = newItemBox(parent);
-        box.addView(sw);
-        box.addView(tv);
+        box.addView(row);
 
         // 卡片先建好再挂长按（walkView 要遍历到子 View）
         walkView((android.view.View) box.getParent(), v -> v.setOnLongClickListener(toggle));
@@ -369,9 +386,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private MaterialSwitch addSwitch(LinearLayout parent, String title, String hintText) {
+        // 左边一列（标题 + 说明，彼此左对齐）；开关无文字放右边、垂直居中 —— 与 BZK 的行同构
         final MaterialSwitch sw = new MaterialSwitch(this);
-        sw.setText(title);
-        sw.setPadding(0, 0, 0, pad / 4);
+        sw.setPadding(pad / 2, 0, 0, 0);
+
+        final TextView titleTv = new TextView(this);
+        titleTv.setText(title);
+        titleTv.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyLarge);
+        titleTv.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface));
 
         final TextView tv = new TextView(this);
         tv.setTextAppearance(com.google.android.material.R.style
@@ -380,9 +403,20 @@ public class MainActivity extends AppCompatActivity {
         tv.setText(hintText);
         tv.setPadding(0, 0, 0, pad / 4);
 
+        final LinearLayout texts = new LinearLayout(this);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.addView(titleTv);
+        texts.addView(tv);
+
+        final LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        row.addView(texts, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        row.addView(sw);
+
         final LinearLayout box = newItemBox(parent);
-        box.addView(sw);
-        box.addView(tv);
+        box.addView(row);
         return sw;
     }
 
