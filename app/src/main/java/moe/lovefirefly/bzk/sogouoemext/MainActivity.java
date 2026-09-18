@@ -297,8 +297,8 @@ public class MainActivity extends AppCompatActivity {
         statusRefreshers.add(refresh);
         refresh.run();
 
-        // 应急：长按标题直接切状态位（App 写「期望值」，模块读到后去设；热键仍照常）
-        sw.setOnLongClickListener(v -> {
+        // 应急：**整张卡片**长按都能切状态位（不只是标题 —— 卡片上任何位置都算）
+        final android.view.View.OnLongClickListener toggle = v -> {
             final android.content.SharedPreferences cfgPrefs =
                     getSharedPreferences(LangConfig.PREFS_NAME, MODE_PRIVATE);
             final boolean now = cfgPrefs.contains(wantKey)
@@ -314,12 +314,24 @@ public class MainActivity extends AppCompatActivity {
             android.widget.Toast.makeText(this, title + "：" + (!now ? onText : offText),
                     android.widget.Toast.LENGTH_SHORT).show();
             return true;
-        });
-
+        };
         final LinearLayout box = newItemBox(parent);
         box.addView(sw);
         box.addView(tv);
+
+        // 卡片先建好再挂长按（walkView 要遍历到子 View）
+        walkView((android.view.View) box.getParent(), v -> v.setOnLongClickListener(toggle));
         return sw;
+    }
+
+    /** 深度优先遍历子树（给整张卡片挂长按/按压反馈用）。 */
+    private void walkView(android.view.View v,
+            java.util.function.Consumer<android.view.View> action) {
+        action.accept(v);
+        if (v instanceof android.view.ViewGroup) {
+            final android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) walkView(g.getChildAt(i), action);
+        }
     }
 
     /** 一个设置项 = 一整个卡片（与 BZK 的条目同款：12dp 圆角 / 1dp outline 描边 / 0 elevation）。 */
