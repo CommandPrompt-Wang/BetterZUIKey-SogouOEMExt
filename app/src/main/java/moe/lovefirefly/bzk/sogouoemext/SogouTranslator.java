@@ -471,11 +471,19 @@ public final class SogouTranslator {
                     // （真机实测 6 → 1 → 0）。窗口外一律照常放行。
                     m.setAccessible(true);
                     module.hook(m).intercept(chain -> {
+                        // 先把选区变化交给 closeSkip 判"是不是用户点了别处"（用户语义：
+                        // 点击重设光标之后，下一次直接出字、不跳过）。这一步与"吞不吞"无关，
+                        // 所以必须在吞之前做。
+                        final Object a2 = chain.getArg(2);
+                        final Object a3 = chain.getArg(3);
+                        if (a2 instanceof Integer && a3 instanceof Integer) {
+                            AutoPairHook.onSelectionChanged((Integer) a2, (Integer) a3);
+                        }
                         if (AutoPairHook.shouldSwallowSelectionUpdate()) {
                             if (BridgeHook.DEV_AUTOPAIR_LOG) {
                                 Log.i(TAG, "pairwrap: swallowed onUpdateSelection (quiet window)");
                             }
-                            return null;                     // void
+                            return null;                     // void：这次不喂给搜狗
                         }
                         return chain.proceed();
                     });

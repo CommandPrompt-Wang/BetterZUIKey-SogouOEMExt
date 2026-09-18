@@ -782,6 +782,15 @@ final class AutoPairHook {
     private static volatile char sJustPaired;
 
     /**
+     * 我们自己最后一次把光标放到的位置（{@code -1} = 不知道）。
+     *
+     * <p>用来区分"这次选区变化是用户点击/拖动造成的"还是"我们自己挪的"：
+     * 只有**位置真的被挪到别处**才算用户操作，否则我们自己的 {@code setSelection}
+     * 引起的回调会把状态误清掉。
+     */
+    private static volatile int sOwnCaret = -1;
+
+    /**
      * 刚补出闭字符时调用：把"那个闭字符"记进 {@code q}。
      *
      * <p>plan 里 {@code q} 是个布尔，这里多存一个字符 —— 判据就不需要再推导
@@ -791,11 +800,42 @@ final class AutoPairHook {
      */
     static void markPairInjected(final char closer) {
         sJustPaired = closer;
+        sOwnCaret = -1;          // 先置未知：下一次选区回调会把它补成当时的位置
     }
 
     /** 清掉 {@code q}（plan §2.1：按下右符号要**无条件**清，避免残留）。 */
     private static void clearCloserMark() {
         sJustPaired = 0;
+        sOwnCaret = -1;
+    }
+
+    /**
+     * 选区变了（{@code onUpdateSelection}）：**用户把光标点到别处 ⇒ 上一次补全作废**。
+     *
+     * <p>用户语义（2026-09-18）：「如果通过点击重设了光标位置，那么直接出字，不跳过」——
+     * 点了别处之后，光标后那个闭字符已经不一定是"我们刚补出来的那一个"了。
+     *
+     * <p>怎么区分是不是用户点的：
+     * <ul>
+     *   <li>我们自己的提交/挪光标会把 {@code sOwnCaret} 设成落点（或置 -1 表示"下次回调即落点"），
+     *       所以由此产生的回调位置 == 落点，<b>不清</b>；</li>
+     *   <li>位置落在别处 ⇒ 一定是用户在文本里点了/拖了，<b>清掉</b>，之后直接出字。</li>
+     * </ul>
+     */
+    static void onSelectionChanged(final int newStart, final int newEnd) {
+        if (sJustPaired == 0) return;                              // 本来就没状态，不用管
+        final int where = newEnd > newStart ? newEnd : newStart;
+        if (sOwnCaret < 0) {
+            sOwnCaret = where;                                     // 记住我们造成的落点
+            return;
+        }
+        if (where != sOwnCaret) {
+            if (BridgeHook.DEV_AUTOPAIR_LOG) {
+                Log.i(TAG, "closeskip: caret moved by user " + sOwnCaret + " -> " + where
+                        + " ⇒ 作废");
+            }
+            clearCloserMark();                                     // 用户点了别处 ⇒ 作废
+        }
     }
 
     /**
