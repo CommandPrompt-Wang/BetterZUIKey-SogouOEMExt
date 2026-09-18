@@ -216,7 +216,8 @@ public final class SogouTranslator {
         final long seq = LangConfig.parseWantSeq(raw);
         final android.content.SharedPreferences sp0 = statePrefs();
         final long last = sp0 == null ? 0L : sp0.getLong(LangConfig.KEY_WANT_SEQ, 0L);
-        if (seq <= last) return;
+        // 只认更新的请求；但若序号比上次小一大截（时钟回拨 / 某一边数据被清），也认
+        if (seq <= last && (last - seq) < 3600_000L) return;
         if (sp0 != null) sp0.edit().putLong(LangConfig.KEY_WANT_SEQ, seq).apply();
         final android.content.SharedPreferences sp = statePrefs();
         final android.content.SharedPreferences.Editor e = sp != null ? sp.edit() : null;

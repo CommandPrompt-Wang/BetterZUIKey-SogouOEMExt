@@ -305,7 +305,8 @@ public class MainActivity extends AppCompatActivity {
                     ? cfgPrefs.getBoolean(wantKey, statusDefault)
                     : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                             .getBoolean(statusKey, statusDefault);
-            final long seq = cfgPrefs.getLong(LangConfig.KEY_WANT_SEQ, 0L) + 1;
+            // 用时间戳当序号：不存在溢出；App 清数据后新值必然更大 ⇒ 不会永久失效
+            final long seq = System.currentTimeMillis();
             cfgPrefs.edit().putBoolean(wantKey, !now)
                     .putLong(LangConfig.KEY_WANT_SEQ, seq).apply();
             for (Runnable r : statusRefreshers) r.run();
