@@ -28,6 +28,9 @@ public class ConfigProvider extends ContentProvider {
     private static final String SELF_PKG = "moe.lovefirefly.bzk.sogouoemext";
     private static final String SOGOU_PKG = "com.sohu.inputmethod.sogou.oem";
 
+    /** 状态位镜像（模块在搜狗进程里通过 insert 写；App 只读）—— App 读不到搜狗进程的私有 prefs。 */
+    public static final String STATE_PREFS = "sogouext_state_mirror";
+
     public static final String AUTHORITY = "moe.lovefirefly.bzk.sogouoemext.config";
     public static final Uri URI = Uri.parse("content://" + AUTHORITY + "/config");
     public static final String COLUMN = "config";
@@ -73,10 +76,31 @@ public class ConfigProvider extends ContentProvider {
         return null;
     }
 
+    /**
+     * 状态位镜像：模块（搜狗进程）在热键切换状态位时调这里，把 fullwidth / enPunct /
+     * physComplete 三个布尔值写给 App —— App 侧读不到搜狗进程的私有 prefs。
+     */
     @Nullable
     @Override
     public Uri insert(@NonNull Uri uri, @Nullable ContentValues values) {
-        return null;                       // 只读
+        if (!isCallerAllowed()) {
+            android.util.Log.w(TAG, "provider: reject insert uid=" + Binder.getCallingUid());
+            return null;
+        }
+        if (values == null) return null;
+        final SharedPreferences sp = getContext()
+                .getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE);
+        final SharedPreferences.Editor e = sp.edit();
+        int n = 0;
+        for (String k : new String[]{"fullwidth", "enPunct", "physComplete"}) {
+            if (values.containsKey(k)) {
+                e.putBoolean(k, Boolean.TRUE.equals(values.getAsBoolean(k)));
+                n++;
+            }
+        }
+        if (n > 0) e.apply();
+        android.util.Log.i(TAG, "provider: state mirrored (" + n + ") " + values);
+        return uri;
     }
 
     @Override

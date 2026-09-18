@@ -199,6 +199,27 @@ public final class SogouTranslator {
     private static volatile Boolean sFull;
     private static volatile Boolean sModeEn;
 
+    /**
+     * 把三个状态位镜像给 App（App 读不到搜狗进程的私有 prefs）。
+     *
+     * <p>best-effort：后台线程、失败只记日志 —— 绝不能拖慢按键。
+     */
+    private static void mirrorState() {
+        final Context ctx = sCtx;
+        if (ctx == null) return;
+        new Thread(() -> {
+            try {
+                final android.content.ContentValues v = new android.content.ContentValues();
+                v.put("fullwidth", currentFullWidth());
+                v.put("enPunct", currentEnPunct());
+                v.put("physComplete", physCompleteActive());
+                ctx.getContentResolver().insert(ConfigProvider.URI, v);
+            } catch (Throwable t) {
+                Log.w(TAG, "mirrorState failed: " + t);
+            }
+        }, "bzk-sogou-mirror").start();
+    }
+
     private static android.content.SharedPreferences statePrefs() {
         try {
             final Object app = Class.forName("android.app.ActivityThread")
@@ -583,6 +604,7 @@ public final class SogouTranslator {
                                     final android.content.SharedPreferences sp = statePrefs();
                                     if (sp != null) sp.edit().putBoolean(KEY_FULL, nv).apply();
                                     Log.i(TAG, "hotkey Shift+Space -> fullwidth=" + nv + " (saved)");
+                                    mirrorState();
                                     banner("全角模式：" + (nv ? "开" : "关"));
                                 }
                                 return true;
@@ -615,6 +637,7 @@ public final class SogouTranslator {
                                     final android.content.SharedPreferences sp = statePrefs();
                                     if (sp != null) sp.edit().putBoolean(KEY_MODE_EN, nv).apply();
                                     Log.i(TAG, "hotkey Ctrl+. -> enPunct=" + nv + " (saved)");
+                                    mirrorState();
                                     banner("标点模式：" + (nv ? "英文标点" : "中文标点"));
                                 }
                                 return true;
@@ -627,6 +650,7 @@ public final class SogouTranslator {
                                     final android.content.SharedPreferences sp = statePrefs();
                                     if (sp != null) sp.edit().putBoolean("physComplete", nv).apply();
                                     Log.i(TAG, "hotkey Ctrl+Shift+9 -> physComplete=" + nv + " (saved)");
+                                    mirrorState();
                                     banner("物理键盘补全：" + (nv ? "开" : "关"));
                                 }
                                 return true;

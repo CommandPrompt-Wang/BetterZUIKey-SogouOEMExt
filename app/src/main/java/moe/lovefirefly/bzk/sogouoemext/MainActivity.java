@@ -141,30 +141,31 @@ public class MainActivity extends AppCompatActivity {
         // 具体当前是中文/英文标点、全角/半角属于"状态位"，由快捷键切换并持久化，不在界面显示。
         smartSwitch = addSwitch(strictBox, "智能中文标点",
                 "使用更合理的中文标点映射（+ - # 等按半角处理）");
-        fullSwitch = addSwitch(strictBox, "全角模式",
-                "在全角/半角之间切换。快捷键：Shift+Space");
-        enSwitch = addSwitch(strictBox, "中英文标点",
-                "允许中文模式下在中英标点之间切换；英文输入状态下标点恒为英文。快捷键：Ctrl+.");
+        fullSwitch = addStatusSwitch(strictBox, "全角模式",
+                "允许在全角/半角之间切换。\n快捷键：Shift+Space",
+                "fullwidth", true, "fullwidth", false, "全角", "半角");
+        enSwitch = addStatusSwitch(strictBox, "中英文标点",
+                "允许中文模式下在中英标点之间切换；\n快捷键：Ctrl+.",
+                "enPunct", true, "enPunct", false, "英文标点", "中文标点");
 
         capSwitch = addSwitch(strictBox, "大写字母进拼音栏",
                 "中文输入时大写字母也进入拼音串，便于英文补全或迅速输入。\n"
                 + "注意：拼音栏仍会显示为小写，上屏时会根据实际输入情况转换大小写。");
 
         numSwitch = addSwitch(strictBox, "智能编号",
-                "数字后面的 。和） 自动用半角 . 和 )（方便 1.  2) 这类编号）；"
-                + "只作用于紧跟数字的那一下，后续字符照常");
+                "数字后面的 。和） 自动用半角 . 和 )，以方便输入 1.  2) 编号格式");
 
         longSwitch = addSwitch(strictBox, "完整的 …… 和 ——",
-                "开启：破折号/省略号各出两个 —— 和 ……；关闭：恢复搜狗原生单出效果");
+                "当输入 — 和 … 时，输出两个而不是一个");
 
         // S：软键盘补全（搜狗原生行为，模块只做开关）
         autoPairSwitch = addSwitch(strictBox, "引号/括号自动补全",
                 "软键盘：关闭后打引号、括号不再自动补另一半（只出单个字符）。");
 
         // 9：物理键盘补全（模块自己注入）—— 与 S 各自独立，共用同一份匹配列表
-        physPairSwitch = addSwitch(strictBox, "物理键盘自动补全",
-                "物理键盘：打引号、括号时自动补上另一半并把光标移到中间。\n"
-                + "快捷键 Ctrl+Shift+9 可临时开关。");
+        physPairSwitch = addStatusSwitch(strictBox, "物理键盘自动补全",
+                "输入引号、括号时自动关闭并将光标移到中间\n快捷键：Ctrl+Shift+9",
+                "physComplete", false, "physComplete", true, "开", "关");
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -245,6 +246,51 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /** 新建一个带说明的开关，挂在给定容器里。 */
+    /** 状态位镜像（模块从搜狗进程写过来的只读副本）。 */
+    private static final String STATE_MIRROR = ConfigProvider.STATE_PREFS;
+    private final java.util.List<Runnable> statusRefreshers = new java.util.ArrayList<>();
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 状态位可能在 App 不在前台时被热键改过 ⇒ 每次回到前台都重读镜像
+        for (Runnable r : statusRefreshers) r.run();
+    }
+
+    /**
+     * 带「当前状态」的开关。
+     *
+     * <p>状态位（全角/半角、中英标点、物理补全开关）存在**搜狗进程**的私有 prefs 里，
+     * App 读不到 ⇒ 由模块在热键切换时通过 [ConfigProvider] 镜像过来；读不到就显示默认值。
+     * 功能开关关掉时显示「功能已关闭」（不看状态位）。
+     */
+    private MaterialSwitch addStatusSwitch(LinearLayout parent, String title, String hintPrefix,
+            String featureKey, boolean featureDefault,
+            String statusKey, boolean statusDefault, String onText, String offText) {
+        final MaterialSwitch sw = new MaterialSwitch(this);
+        sw.setText(title);
+        sw.setPadding(0, pad / 2, 0, pad / 4);
+
+        final TextView tv = new TextView(this);
+        tv.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        tv.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        tv.setPadding(0, 0, 0, pad / 4);
+
+        final Runnable refresh = () -> {
+            final boolean featureOn = prefs.getBoolean(featureKey, featureDefault);
+            final boolean st = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
+                    .getBoolean(statusKey, statusDefault);
+            tv.setText(hintPrefix + "\t当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
+        };
+        statusRefreshers.add(refresh);
+        refresh.run();
+
+        parent.addView(sw);
+        parent.addView(tv);
+        return sw;
+    }
+
     private MaterialSwitch addSwitch(LinearLayout parent, String title, String hintText) {
         final MaterialSwitch sw = new MaterialSwitch(this);
         sw.setText(title);
