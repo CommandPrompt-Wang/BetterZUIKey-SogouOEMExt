@@ -53,6 +53,8 @@ public class MainActivity extends AppCompatActivity {
     private MaterialSwitch capSwitch;
     private MaterialSwitch autoPairSwitch;
     private MaterialSwitch physPairSwitch;
+    private MaterialSwitch wrapSelectionSwitch;
+    private MaterialSwitch closeSkipSwitch;
     private TextView editPairTableRow;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
@@ -172,6 +174,14 @@ public class MainActivity extends AppCompatActivity {
                 "输入引号、括号时自动关闭并将光标移到中间\n快捷键：Ctrl+Shift+9\n长按标题亦可切换补全状态",
                 "physComplete", false, "physComplete", true, "开", "关",
                 LangConfig.KEY_WANT_PHYS);
+
+        // 纯开关（无快捷键）：选中文本时用配对标点包住，而不是替换掉选区
+        wrapSelectionSwitch = addSwitch(strictBox, "选区自动补全",
+                "当选中文本且触发括号补全时，包裹文字而不是替换之");
+
+        // 纯开关（无快捷键）：光标后侧已有闭字符时只移光标，不再多补一个
+        closeSkipSwitch = addSwitch(strictBox, "跳过已存在的闭合符号",
+                "当光标后侧已有闭合符时，只移动光标而不额外产生闭合符");
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -507,6 +517,8 @@ public class MainActivity extends AppCompatActivity {
         bindBoolSwitch(capSwitch, "capitalInPinyin", cfg.capitalInPinyin);
         bindBoolSwitch(autoPairSwitch, "autoPair", cfg.autoPair);
         bindBoolSwitch(physPairSwitch, "physComplete", cfg.physComplete);
+        bindBoolSwitch(wrapSelectionSwitch, "wrapSelection", cfg.wrapSelection);
+        bindBoolSwitch(closeSkipSwitch, "closeSkip", cfg.closeSkip);
         bindSlashSpinner(cfg.slashMode);
     }
 

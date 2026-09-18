@@ -43,6 +43,10 @@ final class LangConfig {
     private static final String KEY_PHYS_COMPLETE = "physComplete";
     /** 功能：「完整的 …… 和 ——」（true = 各两个，false = 各一个）。 */
     private static final String KEY_LONG_MARKS = "longMarks";
+    /** 功能：选中文本时用配对标点包住选区（true = 包裹，false = 照旧替换掉选区）。 */
+    private static final String KEY_WRAP_SELECTION = "wrapSelection";
+    /** 功能：光标后已有闭字符时只移光标、不再补一个（true = 跳过）。 */
+    private static final String KEY_CLOSE_SKIP = "closeSkip";
 
     /** 功能 S 的自定义配对表：若干"前-后"配对依次排列（相邻两字符一组）。空=用输入法默认规则。 */
     private static final String KEY_AUTO_PAIR_TABLE = "autoPairTable";
@@ -114,6 +118,25 @@ final class LangConfig {
     final boolean longMarks;
 
     /**
+     * 功能：「选中文本时用配对标点包住选区」，默认<b>开</b>。
+     *
+     * <p>开 = 选中 {@code abc} 打 {@code （} ⇒ {@code （abc）}（光标落在闭字符之后）；
+     * 关 = 照旧把选区替换掉（搜狗原生行为）。纯开关，没有快捷键。
+     */
+    final boolean wrapSelection;
+
+    /**
+     * 功能：「光标后侧已有闭字符时只移光标」，默认<b>开</b>。
+     *
+     * <p>开 = {@code （xxx|} 打 {@code ）} ⇒ 只把光标移到闭字符之后（不再多出一个 {@code ）}）；
+     * 关 = 照旧再输出一个闭字符。纯开关，没有快捷键。
+     *
+     * <p>判据里的"闭合符"用的是**实际上屏的那个字符**（过了全角/半角与智能标点），
+     * 所以全角 {@code ）} 与半角 {@code )} 不会互相误判。
+     */
+    final boolean closeSkip;
+
+    /**
      * 配对表：**开字符 → 闭字符**（由 {@link #autoPairTable} 一次性解析）。
      *
      * <p>用 Map 而不是每次扫字符串：查表 O(1)，而且**方向性由结构本身保证** ——
@@ -124,7 +147,7 @@ final class LangConfig {
     private LangConfig(List<String> order, int divider, boolean strict,
             boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering,
             int slashMode, boolean capitalInPinyin, boolean autoPair, String autoPairTable,
-            boolean physComplete, boolean longMarks) {
+            boolean physComplete, boolean longMarks, boolean wrapSelection, boolean closeSkip) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
@@ -138,6 +161,8 @@ final class LangConfig {
         this.autoPairTable = autoPairTable == null ? "" : autoPairTable;
         this.physComplete = physComplete;
         this.longMarks = longMarks;
+        this.wrapSelection = wrapSelection;
+        this.closeSkip = closeSkip;
         // 每 2 个字符一组：前 = 开字符（key），后 = 闭字符（value）。
         // 只有开字符会成为 key，方向性由此天然保证；末尾落单字符忽略；
         // 重复的开字符按"首次出现生效"（putIfAbsent），与旧的扫描行为一致。
@@ -181,8 +206,11 @@ final class LangConfig {
             final String autoPairTable = sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE);
             final boolean physComplete = sp.getBoolean(KEY_PHYS_COMPLETE, false);
             final boolean longMarks = sp.getBoolean(KEY_LONG_MARKS, true);
+            final boolean wrapSelection = sp.getBoolean(KEY_WRAP_SELECTION, true);
+            final boolean closeSkip = sp.getBoolean(KEY_CLOSE_SKIP, true);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                    slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks);
+                    slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks,
+                    wrapSelection, closeSkip);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return defaults();
@@ -204,6 +232,8 @@ final class LangConfig {
                 + "&" + KEY_AUTO_PAIR + "=" + sp.getBoolean(KEY_AUTO_PAIR, false)
                 + "&" + KEY_PHYS_COMPLETE + "=" + sp.getBoolean(KEY_PHYS_COMPLETE, false)
                 + "&" + KEY_LONG_MARKS + "=" + sp.getBoolean(KEY_LONG_MARKS, true)
+                + "&" + KEY_WRAP_SELECTION + "=" + sp.getBoolean(KEY_WRAP_SELECTION, true)
+                + "&" + KEY_CLOSE_SKIP + "=" + sp.getBoolean(KEY_CLOSE_SKIP, true)
                 // 配对串里可能出现 & 或 =，必须转义，否则会破坏 k=v&k=v 的行格式
                 + "&" + KEY_AUTO_PAIR_TABLE + "=" + encodeTable(
                         sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE))
@@ -292,6 +322,8 @@ final class LangConfig {
             String autoPairTable = SUGGEST_PAIR_TABLE;
             boolean physComplete = false;
             boolean longMarks = true;
+            boolean wrapSelection = true;
+            boolean closeSkip = true;
             for (String kv : s.split("&")) {
                 final int i = kv.indexOf('=');
                 if (i <= 0) continue;
@@ -310,12 +342,14 @@ final class LangConfig {
                     case KEY_AUTO_PAIR: autoPair = Boolean.parseBoolean(v); break;
                     case KEY_PHYS_COMPLETE: physComplete = Boolean.parseBoolean(v); break;
                     case KEY_LONG_MARKS: longMarks = Boolean.parseBoolean(v); break;
+                    case KEY_WRAP_SELECTION: wrapSelection = Boolean.parseBoolean(v); break;
+                    case KEY_CLOSE_SKIP: closeSkip = Boolean.parseBoolean(v); break;
                     case KEY_AUTO_PAIR_TABLE: autoPairTable = decodeTable(v); break;
                     default: break;
                 }
             }
             return parse(order, divider, strict, full, smart, en, num, slash, capital,
-                    autoPair, autoPairTable, physComplete, longMarks);
+                    autoPair, autoPairTable, physComplete, longMarks, wrapSelection, closeSkip);
         } catch (Throwable err) {
             Log.w(TAG, "parseDump failed: " + err);
             return null;
@@ -379,7 +413,8 @@ final class LangConfig {
 
     static LangConfig defaults() {
         return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
-                false, true, true, true, true, 0, true, false, SUGGEST_PAIR_TABLE, false, true);
+                false, true, true, true, true, 0, true, false, SUGGEST_PAIR_TABLE, false, true,
+                true, true);
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
@@ -415,13 +450,13 @@ final class LangConfig {
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
             boolean capitalInPinyin) {
         return parse(raw, divider, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                slashMode, capitalInPinyin, true, SUGGEST_PAIR_TABLE, true, true);
+                slashMode, capitalInPinyin, true, SUGGEST_PAIR_TABLE, true, true, true, true);
     }
 
     static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
             boolean capitalInPinyin, boolean autoPair, String autoPairTable,
-            boolean physComplete, boolean longMarks) {
+            boolean physComplete, boolean longMarks, boolean wrapSelection, boolean closeSkip) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -434,7 +469,8 @@ final class LangConfig {
         }
         int d = Math.max(0, Math.min(divider, list.size()));
         return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks);
+                slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks,
+                wrapSelection, closeSkip);
     }
 
     /**
@@ -473,6 +509,8 @@ final class LangConfig {
                 + "|pair=" + autoPair
                 + "|phys=" + physComplete
                 + "|long=" + longMarks
+                + "|wrap=" + wrapSelection
+                + "|closeskip=" + closeSkip
                 // 表内容进签名，改表才能触发热重载；用清洗后的形式，
                 // 这样只改分组换行（配对结果不变）不会白热重载一次，日志也仍是单行
                 + "|pairtbl=" + cleanTable(autoPairTable);

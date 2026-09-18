@@ -85,6 +85,12 @@ public final class SogouTranslator {
     /** 功能 9：物理键盘自动补全的功能开关（UI）。 */
     private static volatile boolean sPhysComplete = true;
 
+    /** 功能「选区自动补全」：选中文本时用配对标点包住（默认开）。 */
+    private static volatile boolean sWrapSelection = true;
+
+    /** 功能「跳过已存在的闭合符」：光标后侧已有闭字符时只移光标（默认开）。 */
+    private static volatile boolean sCloseSkip = true;
+
     /** 功能 9 的状态位（由 Ctrl+Shift+9 临时切换并持久化）。 */
     private static volatile Boolean sPhysState;
 
@@ -373,6 +379,16 @@ public final class SogouTranslator {
         return sPairMap;
     }
 
+    /** 功能「选区自动补全」的开关（{@link AutoPairHook} 读）。 */
+    static boolean wrapSelectionEnabled() {
+        return sWrapSelection;
+    }
+
+    /** 功能「跳过已存在的闭合符」的开关（{@link AutoPairHook} 读）。 */
+    static boolean closeSkipEnabled() {
+        return sCloseSkip;
+    }
+
     /**
      * 功能 9 当前是否生效 = 功能开关开 && 状态位为真。
      *
@@ -659,14 +675,15 @@ public final class SogouTranslator {
                             // 语义层 + 形式层（与预览共用同一段）
                             out = transformCommit(cfg, out, commit);
                             final boolean full = currentFullWidth();
-                            // 有选区 ⇒ 把选区包起来（必须在 proceed **之前**问：
-                            // 开字符一旦上屏，选区就被顶掉了，之后再也问不到 ✗）。
+                            // 成对符号那一下：先看要不要"只移光标"（closeSkip），
+                            // 再看要不要把选区包起来。两者都必须在 proceed **之前**问
+                            // （开字符一旦上屏，选区就没了 ✗）。
                             // 传的是管线之后的 out —— 括号必须与**真正上屏的那个字符**
                             // 配对，否则全角/半角与智能标点会各配一套（gb 那边踩过）。
                             // 第三个参数是"这一次原本要提交的整串"：长按 z 的符号菜单
                             // 会一次提交 （） 两个字，那条路只有靠它才认得出是成对提交。
                             if (commit
-                                    && AutoPairHook.maybeWrapSelection(chain.getThisObject(), out, src)) {
+                                    && AutoPairHook.handlePairCommit(chain.getThisObject(), out, src)) {
                                 return Boolean.TRUE;
                             }
                             final Object result;
@@ -910,6 +927,8 @@ public final class SogouTranslator {
         sAutoPair = cfg.autoPair;
         sPairMap = cfg.pairMap;
         sPhysComplete = cfg.physComplete;
+        sWrapSelection = cfg.wrapSelection;
+        sCloseSkip = cfg.closeSkip;
         // App 侧「长按标题应急切换」的期望值（有才应用；应用完顺带镜像回 App）
         applyWants(raw, LangConfig.parseWants(raw));
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
