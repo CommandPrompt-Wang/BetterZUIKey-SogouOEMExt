@@ -180,7 +180,7 @@ public class MainActivity extends AppCompatActivity {
         editPairTableRow.setClickable(true);
         editPairTableRow.setFocusable(true);
         editPairTableRow.setOnClickListener(v -> showAutoPairDialog());
-        strictBox.addView(editPairTableRow);
+        newItemBox(strictBox).addView(editPairTableRow);
 
         final ExtendedFloatingActionButton fab = new ExtendedFloatingActionButton(this);
         fab.setText("原理 / 说明");
@@ -311,9 +311,31 @@ public class MainActivity extends AppCompatActivity {
             return true;
         });
 
-        parent.addView(sw);
-        parent.addView(tv);
+        final LinearLayout box = newItemBox(parent);
+        box.addView(sw);
+        box.addView(tv);
         return sw;
+    }
+
+    /** 一个设置项 = 一整个卡片（与 BZK 的条目同款：12dp 圆角 / 1dp outline 描边 / 0 elevation）。 */
+    private LinearLayout newItemBox(LinearLayout parent) {
+        final com.google.android.material.card.MaterialCardView card =
+                new com.google.android.material.card.MaterialCardView(this);
+        final LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMargins(0, pad / 2, 0, 0);
+        card.setLayoutParams(lp);
+        card.setRadius(pad * 3 / 4f);
+        card.setCardElevation(0f);
+        card.setStrokeWidth(Math.max(1, pad / 16));
+        card.setStrokeColor(themeColor(com.google.android.material.R.attr.colorOutlineVariant));
+
+        final LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(pad * 3 / 4, pad / 2, pad * 3 / 4, pad / 2);
+        card.addView(box);
+        parent.addView(card);
+        return box;
     }
 
     private MaterialSwitch addSwitch(LinearLayout parent, String title, String hintText) {
@@ -328,8 +350,9 @@ public class MainActivity extends AppCompatActivity {
         tv.setText(hintText);
         tv.setPadding(0, 0, 0, pad / 4);
 
-        parent.addView(sw);
-        parent.addView(tv);
+        final LinearLayout box = newItemBox(parent);
+        box.addView(sw);
+        box.addView(tv);
         return sw;
     }
 
