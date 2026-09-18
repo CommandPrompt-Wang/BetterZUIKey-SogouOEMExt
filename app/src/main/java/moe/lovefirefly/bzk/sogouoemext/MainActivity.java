@@ -88,24 +88,43 @@ public class MainActivity extends AppCompatActivity {
         strictBox.setOrientation(LinearLayout.VERTICAL);
         strictBox.setPadding(pad * 2, pad / 2, pad * 2, 0);
 
+        // 严格模式：与其它设置项一样**一张卡片**（左列标题+说明、右侧无文字开关）
         strictSwitch = new MaterialSwitch(this);
-        strictSwitch.setText("只响应系统框架语言切换消息");
-        strictSwitch.setPadding(0, pad / 4, 0, pad / 4);
+        strictSwitch.setPadding(pad / 2, 0, 0, 0);
+
+        final TextView strictTitle = new TextView(this);
+        strictTitle.setText("只响应系统框架语言切换消息");
+        strictTitle.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodyLarge);
+        strictTitle.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface));
 
         strictHint = new TextView(this);
         strictHint.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodySmall);
         strictHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
-        strictHint.setPadding(0, 0, 0, pad / 2);
+        strictHint.setPadding(0, 0, 0, pad / 4);
 
-        strictBox.addView(strictSwitch);
-        strictBox.addView(strictHint);
-        // 斜杠下拉：关 / / / \ （语义层，随后仍受全半角影响）
+        final LinearLayout strictTexts = new LinearLayout(this);
+        strictTexts.setOrientation(LinearLayout.VERTICAL);
+        strictTexts.addView(strictTitle);
+        strictTexts.addView(strictHint);
+
+        final LinearLayout strictRow = new LinearLayout(this);
+        strictRow.setOrientation(LinearLayout.HORIZONTAL);
+        strictRow.setGravity(Gravity.CENTER_VERTICAL);
+        strictRow.addView(strictTexts, new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        strictRow.addView(strictSwitch);
+
+        final LinearLayout strictCard = newItemBox(strictBox);
+        strictCard.addView(strictRow);
+
+        // 斜杠下拉：关 / / / \ （语义层，随后仍受全半角影响）—— 同样一张卡
         final TextView slashLabel = new TextView(this);
         slashLabel.setText("原样输出斜杠");
         slashLabel.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodyLarge);
-        slashLabel.setPadding(0, 0, pad / 2, 0);
+        slashLabel.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurface));
         slashLabel.setLayoutParams(new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));   // 左标签占满剩余宽度 → 下拉右对齐
 
@@ -131,16 +150,18 @@ public class MainActivity extends AppCompatActivity {
         slashHint.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodySmall);
         slashHint.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        slashHint.setPadding(0, 0, 0, pad / 4);
         slashHint.setText("搜狗把 / 和 \\ 都输出成 、。在此选择想原样保留的字符。");
 
         final LinearLayout slashRow = new LinearLayout(this);
         slashRow.setOrientation(LinearLayout.HORIZONTAL);
         slashRow.setGravity(Gravity.CENTER_VERTICAL);
-        slashRow.setPadding(0, pad / 2, 0, 0);
         slashRow.addView(slashLabel);
         slashRow.addView(til);
-        strictBox.addView(slashRow);
-        strictBox.addView(slashHint);
+
+        final LinearLayout slashCard = newItemBox(strictBox);
+        slashCard.addView(slashRow);
+        slashCard.addView(slashHint);
 
         // 三个功能开关（默认全开）。注意：它们只决定"这个功能是否启用"，
         // 具体当前是中文/英文标点、全角/半角属于"状态位"，由快捷键切换并持久化，不在界面显示。
