@@ -148,7 +148,7 @@ final class HotkeyLimitUnlock {
                 m.setAccessible(true);
                 module.hook(m).intercept(chain -> {
                     final Object w = chain.getArg(0);
-                    if (sEnabled && w != null) {
+                    if (w != null) {
                         try {
                             hookEmptyExempt(w.getClass());
                         } catch (Throwable err) {
@@ -173,7 +173,8 @@ final class HotkeyLimitUnlock {
                 m.setAccessible(true);
                 sModule.hook(m).intercept(chain -> {
                     final Object arg = chain.getArg(0);
-                    if (sEnabled && arg instanceof String && ((String) arg).isEmpty()) {
+                    // 无条件：空热键不参与冲突判断
+                    if (arg instanceof String && ((String) arg).isEmpty()) {
                         Log.i(TAG, "hotkeyfix: 空热键不算冲突 → 放行");
                         return Boolean.FALSE;
                     }
@@ -222,7 +223,8 @@ final class HotkeyLimitUnlock {
                 m.setAccessible(true);
                 module.hook(m).intercept(chain -> {
                     final Object arg = chain.getArg(0);
-                    if (sEnabled && arg instanceof String && ((String) arg).isEmpty()) {
+                    // 无条件：空热键本来就不该参与"冲突"判断（∅∩∅≠∅ 是搜狗自己的 bug）
+                    if (arg instanceof String && ((String) arg).isEmpty()) {
                         Log.i(TAG, "hotkeyfix: 空热键不算冲突 → 放行");
                         return Boolean.FALSE;
                     }

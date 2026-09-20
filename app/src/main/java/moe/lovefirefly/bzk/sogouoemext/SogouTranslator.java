@@ -287,6 +287,8 @@ public final class SogouTranslator {
                 v.put("enPunct", currentEnPunct());
                 v.put("physComplete", physCompleteActive());
                 v.put("hardKbd", HardKeyboardLock.hardModeNow());
+                v.put("hardKbdHotkey", HardKeyboardLock.hotkeyLabel());
+                v.put("hardKbdAtMs", System.currentTimeMillis());   // App 用它判断"这次镜像够不够新"
                 ctx.getContentResolver().insert(ConfigProvider.URI, v);
             } catch (Throwable t) {
                 Log.w(TAG, "mirrorState failed: " + t);
@@ -1043,6 +1045,7 @@ public final class SogouTranslator {
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
         // （否则 sStrict 永远停在会话启动时读到的那个值）
         HardKeyboardLock.setEnabled(cfg.hardKbdLock);
+        mirrorState();          // 配置每轮同步都刷一次镜像（热键名等会变，不能等状态变化）
         HardKeyboardLock.setOnStateChanged(SogouTranslator::mirrorState);
         final boolean strictNow = BridgeHook.ENABLE_STRICT && cfg.strict;
         if (strictNow != sStrict) Log.i(TAG, "strict -> " + strictNow);

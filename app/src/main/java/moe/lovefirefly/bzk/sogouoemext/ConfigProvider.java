@@ -98,14 +98,24 @@ public class ConfigProvider extends ContentProvider {
                 n++;
             }
         }
-        if (n > 0) e.apply();
         // 硬键盘状态是"会自己变"的（物理键、CSP 都会改），不像全角/标点只由 App 的长按决定。
         // App 侧刷新逻辑是"写过 want 就优先显示 want"，所以镜像真状态时必须把过期的 want 清掉，
         // 否则状态行会永远停在用户上次长按的值上（真机踩过）。
+        if (values.containsKey("hardKbdAtMs")) {
+            final Long at = values.getAsLong("hardKbdAtMs");
+            e.putLong("hardKbdAtMs", at == null ? 0L : at);
+            n++;
+        }
+        if (values.containsKey("hardKbdHotkey")) {
+            final String hk = values.getAsString("hardKbdHotkey");
+            e.putString("hardKbdHotkey", hk == null ? "" : hk);
+            n++;
+        }
         if (values.containsKey("hardKbd")) {
             getContext().getSharedPreferences(LangConfig.PREFS_NAME, Context.MODE_PRIVATE)
                     .edit().remove("wantHardKbd").apply();
         }
+        if (n > 0) e.apply();       // ⚠ 必须最后统一提交：早提交会把后面 put 的内容丢掉（踩过）
         android.util.Log.i(TAG, "provider: state mirrored (" + n + ") " + values);
         return uri;
     }

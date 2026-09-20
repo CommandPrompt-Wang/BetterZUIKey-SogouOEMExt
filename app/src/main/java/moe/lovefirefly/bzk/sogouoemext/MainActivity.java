@@ -211,11 +211,11 @@ public class MainActivity extends AppCompatActivity {
                 + "注意：注意快捷键冲突与上层抢占问题；Shift+字母为大写快捷键，谨慎设置。");
 
         // 锁定软硬键盘模式：功能开关 + 状态行（硬键盘/软键盘）+ 整卡长按应急切换
-        hardKbdSwitch = addStatusSwitch(strictBox, "锁定软硬键盘模式（长按切换）",
+        hardKbdSwitch = addStatusSwitch(strictBox, "更好的软硬键盘切换",
                 "软硬键盘切换功能在本平台几乎没有意义，硬键盘下仍然会因为点击而弹出软键盘，"
                 + "反而导致快捷键完全失效。\n长按整行亦可切换硬键盘/软键盘状态",
                 LangConfig.KEY_HARD_KBD_LOCK, true, "hardKbd", false, "硬键盘", "软键盘",
-                LangConfig.KEY_WANT_HARD);
+                LangConfig.KEY_WANT_HARD, this::showHardKbdRules);
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -303,8 +303,49 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // 状态位可能在 App 不在前台时被热键改过 ⇒ 每次回到前台都重读镜像
+        // 状态位可能在 App 不在前台时被热键改过 ⇒ 先按现有镜像刷一次，再异步拉最新
         for (Runnable r : statusRefreshers) r.run();
+        fetchStateAsync();
+    }
+
+    /** 正在等待模块回镜像 / 已超时（状态行显示占位符）。 */
+    private volatile boolean stateFetching;
+    private volatile boolean stateTimedOut;
+
+    /**
+     * 进前台时**异步拉取一次**真实状态。
+     *
+     * <p>为什么需要：状态位在搜狗进程里，模块每 5 秒才周期读一次配置；用户刚在搜狗里改了设置
+     * （比如清空热键）时，镜像可能还是旧的。这里主动 poke 一次让模块立刻重读并镜像，
+     * 期间状态行显示「获取中……」，5 秒还没等到就显示「获取超时」。
+     */
+    private void fetchStateAsync() {
+        final long askedAt = System.currentTimeMillis();
+        stateFetching = true;
+        stateTimedOut = false;
+        for (Runnable r : statusRefreshers) r.run();
+        sendConfigPoke();
+        final android.os.Handler h = new android.os.Handler(getMainLooper());
+        h.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                final long at = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
+                        .getLong("hardKbdAtMs", 0L);
+                if (at >= askedAt) {                    // 模块回了更新的镜像
+                    stateFetching = false;
+                    stateTimedOut = false;
+                    for (Runnable r : statusRefreshers) r.run();
+                    return;
+                }
+                if (System.currentTimeMillis() - askedAt > 5000) {
+                    stateFetching = false;
+                    stateTimedOut = true;
+                    for (Runnable r : statusRefreshers) r.run();
+                    return;
+                }
+                h.postDelayed(this, 250);
+            }
+        }, 250);
     }
 
     /**
@@ -314,10 +355,49 @@ public class MainActivity extends AppCompatActivity {
      * App 读不到 ⇒ 由模块在热键切换时通过 [ConfigProvider] 镜像过来；读不到就显示默认值。
      * 功能开关关掉时显示「功能已关闭」（不看状态位）。
      */
+    /** 「查看切换规则」弹窗（文案由用户定稿；{@code {快捷键}} 显示搜狗里的真实绑定）。 */
+    private void showHardKbdRules() {
+        final String hk = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
+                .getString("hardKbdHotkey", "");
+        final String hotkey = (hk == null || hk.isEmpty())
+                ? "未设置该快捷键" : hk;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("切换规则")
+                .setMessage(
+                        "模块接管切换：开关打开时将拦截搜狗原生的自动切换行为，"
+                        + "而下面这些显式动作永远有效。\n\n"
+                        + "切到软键盘的方法：\n"
+                        + "   快捷键：" + hotkey + "\n"
+                        + "   2 秒内，进入->退出->进入同一文本框\n"
+                        + "   在硬键盘模式下长按条目\n"
+                        + "   点击工具栏最右侧的软键盘按钮\n\n"
+                        + "切到物理键盘的方法\n"
+                        + "   快捷键：" + hotkey + "\n"
+                        + "   用物理键盘打字\n"
+                        + "   在软键盘模式下长按条目\n\n"
+                        + "其他\n"
+                        + "   硬键盘态下点一次输入框不再会弹出软键盘，除非满足上述条件\n"
+                        + "   软键盘态下把软键盘收掉后，再次点进输入框会正常弹出")
+                .setPositiveButton("知道了", null)
+                .show();
+    }
+
     private MaterialSwitch addStatusSwitch(LinearLayout parent, String title, String hintPrefix,
             String featureKey, boolean featureDefault,
             String statusKey, boolean statusDefault, String onText, String offText,
             String wantKey) {
+        return addStatusSwitch(parent, title, hintPrefix, featureKey, featureDefault, statusKey,
+                statusDefault, onText, offText, wantKey, null);
+    }
+
+    /**
+     * 同 {@link #addStatusSwitch}，但可在说明和状态行之间插一条 {@code [查看切换规则]} 链接
+     * （点开 {@code onRules} 弹窗）。
+     */
+    private MaterialSwitch addStatusSwitch(LinearLayout parent, String title, String hintPrefix,
+            String featureKey, boolean featureDefault,
+            String statusKey, boolean statusDefault, String onText, String offText,
+            String wantKey, Runnable onRules) {
         // 左边一列（标题 + 说明，彼此左对齐）；开关无文字放右边、垂直居中 —— 与 BZK 的行同构
         final MaterialSwitch sw = new MaterialSwitch(this);
         sw.setPadding(pad / 2, 0, 0, 0);
@@ -332,7 +412,15 @@ public class MainActivity extends AppCompatActivity {
         tv.setTextAppearance(com.google.android.material.R.style
                 .TextAppearance_Material3_BodySmall);
         tv.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        tv.setText(hintPrefix);
         tv.setPadding(0, 0, 0, pad / 4);
+
+        // 状态行单独一个 TextView（有规则链接时它要排在链接下面）
+        final TextView statusTv = new TextView(this);
+        statusTv.setTextAppearance(com.google.android.material.R.style
+                .TextAppearance_Material3_BodySmall);
+        statusTv.setTextColor(themeColor(com.google.android.material.R.attr.colorOnSurfaceVariant));
+        statusTv.setPadding(0, 0, 0, pad / 4);
 
         final Runnable refresh = () -> {
             // 注意：不能读字段 prefs —— 本方法在 onCreate 里被调用时它还没赋值（踩过 ✗）
@@ -344,7 +432,15 @@ public class MainActivity extends AppCompatActivity {
                     ? cfgPrefs.getBoolean(wantKey, statusDefault)
                     : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                             .getBoolean(statusKey, statusDefault);
-            tv.setText(hintPrefix + "\n当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
+            if (stateFetching) {
+                statusTv.setText("当前状态：获取中……");
+                return;
+            }
+            if (stateTimedOut) {
+                statusTv.setText("当前状态：获取超时");
+                return;
+            }
+            statusTv.setText("当前状态：" + (featureOn ? (st ? onText : offText) : "功能已关闭"));
         };
         statusRefreshers.add(refresh);
         refresh.run();
@@ -373,6 +469,17 @@ public class MainActivity extends AppCompatActivity {
         texts.setOrientation(LinearLayout.VERTICAL);
         texts.addView(titleTv);
         texts.addView(tv);
+        if (onRules != null) {
+            final TextView rulesTv = new TextView(this);
+            rulesTv.setText("[查看切换规则]");
+            rulesTv.setTextAppearance(com.google.android.material.R.style
+                    .TextAppearance_Material3_BodySmall);
+            rulesTv.setTextColor(themeColor(com.google.android.material.R.attr.colorPrimary));
+            rulesTv.setPadding(0, 0, 0, pad / 4);
+            rulesTv.setOnClickListener(v -> onRules.run());
+            texts.addView(rulesTv);
+        }
+        texts.addView(statusTv);
 
         final LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);

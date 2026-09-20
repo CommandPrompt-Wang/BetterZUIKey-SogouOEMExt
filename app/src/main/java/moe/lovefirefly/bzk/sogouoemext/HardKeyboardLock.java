@@ -97,6 +97,75 @@ final class HardKeyboardLock {
         notifyState();
     }
 
+    /**
+     * 搜狗「软硬键盘切换」热键的可读名（给 App 的规则弹窗显示；未设置为 null）。
+     *
+     * <p>来源：搜狗私有 MMKV {@code files/mmkv/HardKeyboardRepository} 里的键
+     * {@code hardkeyboard_soft_hard_switch_hotkey}。格式：键名后紧跟 {@code [len+1][len][值]}。
+     * 用搜狗服务实例拿 files 目录（模块自己的 ctx 是系统上下文，读不到私有目录）。
+     */
+    static String hotkeyLabel() {
+        final Object svc = sService;
+        if (!(svc instanceof android.content.Context)) return null;
+        // 直接解析 MMKV 文件（真机验证过布局）：
+        //   [0,4) = 当前有效数据长度 actualSize；有效条目只在 [4, actualSize) 内；
+        //   超出部分是陈旧数据（append/重写留下的），同一个键在有效区内**最后一份**才是当前值。
+        try {
+            final java.io.File f = new java.io.File(
+                    ((android.content.Context) svc).getFilesDir(),
+                    "mmkv/HardKeyboardRepository");
+            if (!f.exists()) return null;
+            final byte[] d = new byte[(int) f.length()];
+            try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+                int off = 0;
+                while (off < d.length) {
+                    final int n = in.read(d, off, d.length - off);
+                    if (n <= 0) break;
+                    off += n;
+                }
+            }
+            if (d.length < 8) return null;
+            final int actual = (d[0] & 0xff) | ((d[1] & 0xff) << 8)
+                    | ((d[2] & 0xff) << 16) | ((d[3] & 0xff) << 24);
+            final int end = (actual > 8 && actual <= d.length) ? actual : d.length;
+            final byte[] key = "hardkeyboard_soft_hard_switch_hotkey".getBytes("UTF-8");
+            int idx = -1;
+            for (int at = indexOf(d, key, 0, end); at >= 0; at = indexOf(d, key, at + 1, end)) {
+                idx = at;
+            }
+            if (idx < 0) return null;
+            final int p = idx + key.length;
+            if (p + 2 > end) return null;
+            final int len = d[p + 1] & 0xff;
+            if ((d[p] & 0xff) != len + 1 || len > 32) return null;      // 空值 = len 0
+            final String v = len == 0 ? null : new String(d, p + 2, len, "UTF-8");
+            Log.i(TAG, "hardkbd-lock: 热键设置 = \"" + v + "\" (actual=" + actual + ")");
+            return v;
+        } catch (Throwable err) {
+            Log.w(TAG, "hardkbd-lock: 读热键设置失败: " + err);
+            return null;
+        }
+    }
+
+    private static int indexOf(byte[] hay, byte[] needle) {
+        return indexOf(hay, needle, 0);
+    }
+
+    private static int indexOf(byte[] hay, byte[] needle, int from) {
+        return indexOf(hay, needle, from, hay.length);
+    }
+
+    private static int indexOf(byte[] hay, byte[] needle, int from, int end) {
+        outer:
+        for (int i = Math.max(0, from); i + needle.length <= Math.min(end, hay.length); i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (hay[i + j] != needle[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
     /** 当前模式（true = 硬键盘）。状态行/镜像用这个。 */
     static boolean hardModeNow() {
         return sModeHard;
