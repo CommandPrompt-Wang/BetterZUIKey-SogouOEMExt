@@ -31,7 +31,9 @@ final class ConfigPoke {
 
     static void start(final Context ctx) {
         if (sStarted || ctx == null) return;
-        sStarted = true;
+        // 注意：**注册成功才置 sStarted**。曾经先置真再注册，结果传进来的若是系统
+        // Context（包名 android）会抛 SecurityException，却把后续正常注册也堵死了
+        // （真机 2026-09-20：poke 一直收不到，开关要等 5 秒轮询）。
         try {
             final BroadcastReceiver receiver = new BroadcastReceiver() {
                 @Override
@@ -46,6 +48,7 @@ final class ConfigPoke {
             } else {
                 ctx.registerReceiver(receiver, filter);
             }
+            sStarted = true;
             Log.i(TAG, "config poke receiver registered");
         } catch (Throwable tr) {
             Log.w(TAG, "config poke receiver failed: " + tr);

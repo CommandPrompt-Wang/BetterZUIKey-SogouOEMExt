@@ -8,6 +8,7 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.view.InputDevice;
 import android.view.KeyEvent;
+import android.view.inputmethod.InputConnection;
 import android.view.inputmethod.InputMethodSubtype;
 
 import java.lang.reflect.Field;
@@ -120,6 +121,13 @@ public final class SogouTranslator {
 
     /** 最近一次按下的 / 或 \ （搜狗都产 、，反向映射靠它消歧）。 */
     private static volatile char sLastSlashKey;
+
+    /** 智能编号状态：上一次上屏的末字符是数字，且光标没被用户挪走。 */
+    private static volatile boolean sNumberValid;
+    /** 我们刚经手过一次文本上屏，紧跟的那次选区回调算"我们自己造成的落点"。 */
+    private static volatile boolean sNumberPending;
+    /** 我们自己造成的落点（基线），用户挪到别处就作废。 */
+    private static volatile int sNumberBaseline = -1;
 
     /** 最近一次提交出去的最后一个字符（智能编号要判断"前一个是数字"）。 */
     private static volatile char sLastCommittedChar;
@@ -484,6 +492,7 @@ public final class SogouTranslator {
                                 AutoPairHook.onSelectionChanged(ss, se);
                             }
                             ShiftArrowRepair.onSelection(sService, ss, se);
+                            numberingOnSelection(ss, se);
                         }
                         if (AutoPairHook.shouldSwallowSelectionUpdate()) {
                             if (BridgeHook.DEV_AUTOPAIR_LOG) {
@@ -527,6 +536,15 @@ public final class SogouTranslator {
                     // 下一次弹出键盘就会生效（setInputView 只在视图重建时才会来）
                     m.setAccessible(true);
                     module.hook(m).intercept(chain -> {
+                        // 尽早用「服务实例自己的 Context」注册配置广播接收器：
+                        // 只靠 setInputView 注册的话，键盘视图还没建时收不到设置页的 poke，
+                        // 拨开关要干等 5 秒兜底轮询才生效（真机 2026-09-20 实测）。
+                        // 注意：**不要**在这里给 sService 赋值 —— setInputView 的初始化块
+                        // 以 sService == null 为条件，提前赋值会让钩子全都不装。
+                        final Object self = chain.getThisObject();
+                        if (self instanceof android.content.Context) {
+                            ConfigPoke.start((android.content.Context) self);
+                        }
                         new Handler(Looper.getMainLooper()).postDelayed(() -> {
                             reloadConfig();
                             syncMarker();
@@ -563,7 +581,43 @@ public final class SogouTranslator {
     private static String transformCommit(final LangConfig cfg, final String src, final boolean commit) {
         final String out = applyPipeline(cfg, src, commit);
         sLastCommittedChar = out.isEmpty() ? 0 : out.charAt(out.length() - 1);
+        // 智能编号状态：这一次上屏的末字符是数字才武装；任何一次非数字上屏都立刻作废
+        if (commit) sNumberValid = lastCommittedWasDigit();
         return out;
+    }
+
+    /** 上一次提交的末字符是不是数字（智能编号的"数字后"判据）。 */
+    private static boolean lastCommittedWasDigit() {
+        return sLastCommittedChar >= '0' && sLastCommittedChar <= '9';
+    }
+
+    /**
+     * 智能编号：光标被**用户**挪走就作废（对齐 closeSkip 的做法）。
+     *
+     * <p>为什么要这样：判据只看"上一次提交的末字符是不是数字"时，打完 {@code 123} 再把光标
+     * 挪到别处（哪怕落在另一个数字后面），再打 {@code 。} 仍会按编号输出半角点
+     * （用户 2026-09-20 报的问题）。
+     *
+     * <p>怎么区分"用户挪的"和"我们自己写字挪的"：每次我们经手 {@code commitText} /
+     * {@code setComposingText} 都置一次 {@link #sNumberPending}，随后那次
+     * {@code onUpdateSelection} 就是"我们造成的落点"，记为基线；之后再出现**没有 pending 的**
+     * 光标变化，就是用户挪的 ⇒ 作废。
+     */
+    private static void numberingOnSelection(final int start, final int end) {
+        if (!sNumberValid) {
+            sNumberPending = false;
+            return;
+        }
+        final int where = Math.max(start, end);
+        if (sNumberPending) {
+            sNumberBaseline = where;
+            sNumberPending = false;
+            return;
+        }
+        if (sNumberBaseline >= 0 && where != sNumberBaseline) {
+            sNumberValid = false;
+            Log.i(TAG, "numbering: 光标被挪到 " + where + "（基线 " + sNumberBaseline + "）⇒ 作废");
+        }
     }
 
     /**
@@ -575,6 +629,8 @@ public final class SogouTranslator {
      */
     static String previewCommit(final LangConfig cfg, final CharSequence in) {
         if (cfg == null || in == null || in.length() != 1) return null;
+        // 干跑不做 IPC：智能编号的判据退回"上一次提交的末字符"，与真正上屏那条路
+        // 可能有极小差异（预览只用于配对判断，不影响上屏字符）
         return applyPipeline(cfg, in.toString(), true);
     }
 
@@ -610,9 +666,9 @@ public final class SogouTranslator {
                 if (r != null) out = r;
             }
         }
-        // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）
-        if (commit && cfg.smartNumbering
-                && sLastCommittedChar >= '0' && sLastCommittedChar <= '9') {
+        // 智能编号：数字后面的 。/） 用半角（1. 2) 这类编号）。
+        // sNumberValid = "上一次上屏的是数字" 且 "光标没被用户挪走"（见 numberingOnSelection）
+        if (commit && cfg.smartNumbering && sNumberValid) {
             if ("。".equals(out)) out = ".";
             else if ("）".equals(out)) out = ")";
         }
@@ -670,6 +726,8 @@ public final class SogouTranslator {
                             if (AutoPairHook.isInjecting()) return chain.proceed();
                             final String src = a0.toString();
                             final boolean commit = n.equals("commitText");
+                            // 智能编号：这次光标变化是我们写字造成的 ⇒ 让紧随的选区回调更新基线
+                            sNumberPending = true;
                             if (BridgeHook.DEV_KEY_LOG) {
                                 Log.i(TAG, "IC " + n + " " + src + " mask=" + sCaseMask);
                             }
@@ -948,6 +1006,7 @@ public final class SogouTranslator {
         sPhysComplete = cfg.physComplete;
         sWrapSelection = cfg.wrapSelection;
         sCloseSkip = cfg.closeSkip;
+        ShiftArrowRepair.setEnabled(cfg.shiftArrowRepair);
         // App 侧「长按标题应急切换」的期望值（有才应用；应用完顺带镜像回 App）
         applyWants(raw, LangConfig.parseWants(raw));
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效

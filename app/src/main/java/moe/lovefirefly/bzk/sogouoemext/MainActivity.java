@@ -53,6 +53,7 @@ public class MainActivity extends AppCompatActivity {
     private MaterialSwitch physPairSwitch;
     private MaterialSwitch wrapSelectionSwitch;
     private MaterialSwitch closeSkipSwitch;
+    private MaterialSwitch shiftArrowSwitch;
     private TextView editPairTableRow;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
@@ -196,6 +197,11 @@ public class MainActivity extends AppCompatActivity {
         closeSkipSwitch = addSwitch(strictBox, "跳过已存在的闭合符号",
                 "当光标后侧已有闭合符时，只移动光标而不额外产生闭合符。\n"
                 + "当手动移动光标位置后恢复正常闭合");
+
+        // 纯开关（无快捷键）：把 extend 当 move 用的宿主里，Shift+方向键由模块接管选字/选词
+        shiftArrowSwitch = addSwitch(strictBox, "Shift+方向键选区修复",
+                "部分应用（如网页输入框）把 Shift+方向键的\"扩展选区\"做成了移光标，"
+                + "导致选不中。开启后由模块接管推进：逐字，按住 Ctrl 时按词。");
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -575,6 +581,7 @@ public class MainActivity extends AppCompatActivity {
         bindBoolSwitch(physPairSwitch, "physComplete", cfg.physComplete);
         bindBoolSwitch(wrapSelectionSwitch, "wrapSelection", cfg.wrapSelection);
         bindBoolSwitch(closeSkipSwitch, "closeSkip", cfg.closeSkip);
+        bindBoolSwitch(shiftArrowSwitch, "shiftArrowRepair", cfg.shiftArrowRepair);
         bindSlashSpinner(cfg.slashMode);
     }
 
