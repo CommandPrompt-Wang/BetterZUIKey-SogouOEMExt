@@ -371,6 +371,167 @@ int d(int code) {
 **实现位置**：`AutoPairHook`（`UU.a` 总闸 / `Yja.a` 自定义表 / 物理注入），
 按键与提交接线在 `SogouTranslator`（`installKeyGuards` / `installPunctuationRewrite`）。
 
+## 3.9 选区接管与按词（`shiftArrowRepair`）
+
+**动机**：部分宿主把“扩选”当成“移动光标”。DSH 的 composer 是 Lexical，它 preventDefault 之后调
+`Selection.modify("extend", …, "character")`，而这条 API 在 Android WebView 上退化成移动光标，于是物理键盘
+`Shift`+方向键选不了字；Edge 地址栏那种原生 EditText 是正常的。
+
+**怎么定性的**（只读证据，不猜）：键事件确实到得了输入法（`onKeyDown kc=DPAD_LEFT meta=0x41`）；
+裸 contenteditable 能选、照着 Lexical 的调用方式模拟就不能；宿主回调全是 `onUpdateSelection(n,n)`（塌的）。
+
+**判定：逐次核对，不做“第一下定性”**（`ShiftArrowRepair`）
+
+- 每次放行水平方向键之前，先自己算一个“期望焦点”；宿主回报的焦点与它一致就继续不插手，不一致就当场接管，
+  之后吞掉按键，自己用 `InputConnection.setSelection(anchor, focus)` 落选区（锚点不动）；
+- 好宿主的判据分两档：**扩选要“有区间且焦点对上”，移光标要“塌的且位置对上”**。“要扩选却收到塌的”
+  一律算失败，否则单独按 `Shift` 时我们期望 ±1，坏宿主也正好挪一格，两边数字相同就漏过去了；
+- 反例（踩过）：按“第一下有没有区间”定性，会被 Lexical 反向给出的**假区间**（`(25,26)`）骗过去，
+  结果是反向永远不接管。
+
+**三档口径**（都已真机验证）：
+
+| 按键 | 行为 | 步长 |
+|---|---|---|
+| `Shift`+←/→ | 逐字扩选 | ±1 |
+| `Ctrl` / `Alt`+←/→ | 按词移动光标 | ICU 分词 |
+| `Ctrl+Shift`+←/→ | 按词扩选 | ICU 分词 |
+
+- 分词用公开 API `android.icu.text.BreakIterator.getWordInstance(Locale)`，它内置中日韩词典，
+  和系统原生 Ctrl+方向键是同一套引擎；**不要**用 `android.text.WordIterator`，那是 @hide；
+- ICU 把空白也切成分段，`preceding` / `following` 会停在空格上，必须越过空白段去找非空白段，
+  否则 `bar 北京大学` 从“北”往左只跳到空格；
+- 取文本首选 `getExtractedText()`（整段文本 + `startOffset` + 选区绝对偏移，映射最干净）。退回拼窗口时，
+  `getTextBeforeCursor` 相对的是选区起点、`getTextAfterCursor` 相对的是选区终点，必须
+  `before + getSelectedText() + after` 三段拼才是绝对连续窗口，少了中间那段会整体错位；
+- 垂直键（↑/↓/Home/End/翻页）算不出屏幕行，放行让宿主挪，再在 `onUpdateSelection` 里把
+  “锚点 → 宿主挪到的位置”补成区间；
+- `isSelfUpdate()`：我们自己补的那次选区回调要跳过 `AutoPairHook.onSelectionChanged`，
+  否则会被 closeSkip 当成“用户点了别处”。
+
+**开关 `shiftArrowRepair`**（默认开）：关掉就完全不动方向键。
+
+**同一处顺带修的智能编号**：`123` 打完手动把光标挪走再打 `。`，原来还是输出半角 `.`。判据原来只看
+“上一次上屏的末字符是不是数字”，光标这件事完全没参与。现在：每次经手 `commitText` / `setComposingText`
+置 pending，紧随的 `onUpdateSelection` 记成基线；之后出现**没有 pending 的**光标变化就是用户挪的，
+编号状态随之失效（与 closeSkip 同一套判据）。
+
+> ⚠️ **最大的坑（两次把用户输入法搞坏，务必记住）**：在按键钩子里**包装 `chain.proceed()` 的返回值**
+> （哪怕只是加一行日志）会让物理键盘字母上不了屏、搜狗工具栏消失，只剩软键盘可用。
+> 定位方式是 `git stash` 回干净版立刻恢复。按键钩子只能做入口埋点，**绝对不要碰返回值与链路**。
+
+## 3.10 解除快捷键设置限制（`unlockHotkeyLimit`）
+
+**动机**：搜狗“外接键盘设置”录快捷键时，`Alt` / `Shift` 系一律被拦，弹的是真 Toast，资源里四条
+`不支持设置Alt|Shift+字母|符号组合键`。可底层的组合键模型本来就认它们。
+
+**入口是怎么找到的**（这一招值得复用）：那四条是**资源 id**，代码里只有数字常量，硬反汇编太慢。
+改成在搜狗进程挂一个**只读**的 `Toast.makeText` 观察点，捕获一次调用栈：
+
+```
+Ysa.afterTextChanged → _sa.a(String)Z → _sa.k → GA.d → GA.f → LA.a → Toast.makeText
+```
+
+栈里紧挨 `afterTextChanged`（框架接口方法名，稳定）的那个 App 帧就是总闸 `_sa.a(String)Z`。
+`HotkeyLimitUnlock` 按签名 `(String)Z` 反射挂钩，**代码里不出现混淆名**（名字从栈里取）。
+
+**开关 `unlockHotkeyLimit`**（默认关）：开则校验一律返回 true。放开之后冲突、被上层应用抢占都要自行判断，
+而且 `Shift`+字母 本身是大写切换键。
+
+**⚠️ 边界（实测，重要）**：这个开关只解决“设置页不让设”，**不解决“运行时没执行”**。本机上硬键盘热键
+本身就不触发（连搜狗原生支持的 `Ctrl+Q` 也不触发），而按键确实到得了输入法
+（`onKeyDown kc=KEYCODE_H meta=0x12`）。想真正用上 `Alt` / `Shift`+字母，只能由模块自己在
+`installKeyGuards` 里加映射。
+
+## 3.11 软硬键盘状态机（`hardKbdLock`）
+
+**症状**：物理键盘态下点输入框会弹软键盘，而软键盘一出现，硬键盘容器页就被销毁，引擎两道闸全灭，
+所有硬键盘热键（含 `Alt`+字母）失效。搜狗原生的“软硬键盘切换”只是临时开关一下软键盘，
+下次触摸文本框照旧弹。
+
+**机制**（实测 + 反汇编，别再从头挖）：
+
+```
+点文本框 → coa.a(EditorInfo,Z) → iP.a(2)  = KeyboardScheduler.startKeyboard(2)，启动软键盘页
+                                   ↓
+      硬键盘容器页 rua onDestroy → Lta.a(false) → 引擎两道闸全灭（Lta.b() / iP.f()）→ 热键失效
+
+物理键 → qua.onKeyDown → qua.d() = startHardKeyboard → Lta.c(true) + wo.G() → 硬键盘页重建，热键武装
+CSP 硬→软 → 命令 -3 = jua = SwitchSoftKeyboard → Lta.b(false) + iP.a(3)
+```
+
+| 角色 | 真身 | 关键成员 |
+|---|---|---|
+| 页容器 | `iP`（`WO.k()`） | `a(I)` = startKeyboard；`f()` = 硬键盘页活着 |
+| 硬键盘页 | `rua` | `G()` = onCreate → `Lta.a(true)`；`H()` = onDestroy → `Lta.a(false)` |
+| 软键盘页 | `Jra` | `G()` / `H()` → `Gra.a(Z)` |
+| 模式条件 | `Lta` | 字段 c = 引擎第一闸（`a(Z)` 写 / `b()` 读）；d = StartFromHardKey（`c(Z)` 写） |
+| 进硬键盘 | `qua.d()` | 唯一调用者是 `qua.onKeyDown/Up` |
+| 回软键盘 | 命令 -3 = `jua` | `Lta.b(false)` + `iP.a(3)` |
+
+> **类名坑**：dex 描述符 `LiP;` 的运行时类名是 **`iP`**（`Lmua;`→`mua`、`Loua;`→`oua`、`LPra;`→`Pra`），
+> 写成 `LiP` 会 CNFE。另外不要靠名字找页容器：`sWo`（`WO` 实例）调 `k()` 就是它。
+> `iP.a(3)` **不是**“切硬键盘页”，它是“按当前条件重启调度器”，`qua.d` 与 `jua` 都用它。
+
+**状态机**：状态只有一位 `sModeHard`，只认这几条转移。处理器一律“先改状态、再放行搜狗的动作”，
+所以不需要任何时间窗：
+
+| 转移 | 触发 |
+|---|---|
+| → 硬键盘 | `Lta.c(true)` = StartFromHardKey（`qua.d()` 调） |
+| → 硬键盘 | 软键盘态下碰物理键盘（打字、CSP 的 P）。软键盘态下 `qua.d` 走另一分支，钩不到信号，必须从按键侧判 |
+| → 软键盘 | 命令 -3 `jua`（工具栏“软键盘”按钮，硬键盘态按 CSP 也走它） |
+| → 软键盘 | 同一个框 2 秒内第二次“要软键盘”（`InputMethodImpl.showSoftInput`，`DOUBLE_TAP_MS = 2000`） |
+| 按方向 | 插件条目长按（`applyWant`） |
+
+**执行只在搜狗自己的写点上取舍**：
+
+- 硬键盘态：吞掉“输入开始那次” `iP.a(2)`，软键盘页就不起来。这一步很干净，没建任何东西；
+- 软键盘态：**不拦**硬键盘页的条件位写入。拦了会让搜狗的页面状态机不一致，软键盘页被拆掉之后再也起不来
+  （踩过），改为 250ms 后用它的切软动作夺回（限流 800ms）；
+- 硬→软 的驱动 = `Lta.c(true)` + 重启调度器（`page.a(3)`）+ `requestShowSelf(0)`，
+  也就是搜狗 `startHardKeyboard` 那套。
+
+**⛔ 三条不能违反的硬约束**：
+
+1. 绝不在框架层拒绝显示（`onShowInputRequested → false`，或吞掉 `showSoftInput`）。窗口被收起后，
+   搜狗自己的 `requestShowSelf(0)` 也会被拒，结果是工具栏与候选窗永久消失、输入被阻塞；
+2. 不要动 CapsLock，搜狗会把它同步回系统并坏输入（撤过两次）；
+3. `iP.a(3)` 不是“切硬键盘页”，别拿它当硬键盘入口。
+
+**已证伪、别再走**：把 `iP.f()` 伪造成恒 true（热键确实常驻了，但 `f()` 同时被热键动作本身用来选页，
+于是 CSP 把软键盘锁死、`Alt+H` 只能开不能关）；拦条件位写入；时间窗放行；动 CapsLock；在框架层拒绝显示。
+
+**开关 `hardKbdLock`**（1.2.2 起默认关）：装完不主动接管，需要在设置页打开；长按那一行可以应急切换方向。
+
+## 3.12 热键名怎么读、状态怎么镜像到 App
+
+**为什么要读**：规则弹窗要显示“你在搜狗里绑的那个热键”，而它存在 MMKV 里：
+`files/mmkv/HardKeyboardRepository`。
+
+**MMKV 文件布局**（踩过，按这个来）：
+
+- 头 4 字节 = 当前有效数据长度 `actualSize`；有效条目只在 `[4, actualSize)` 内，超出部分是**陈旧数据**；
+- 同一个键在有效区内**最后一份**才是当前值，只取“全文件最后一份”会拿到陈旧空值；
+- 条目格式 `[len+1][len][value]`；
+- MMKV 官方 API 的工厂方法被 R8 改名成单字母 `c(String,int)`（`getString` 没被改），
+  走文件解析更省事，而且已经真机验证。
+
+**镜像**：模块把 `hardKbd`（现在是硬键盘还是软键盘）、`hardKbdHotkey`（热键名，没设过则为空）、
+`hardKbdAtMs`（时间戳）写进 `sogouext_state_mirror`，App 读它显示状态行。
+
+**为什么要异步拉**：状态在搜狗进程里，模块平时每 5 秒才周期读一次配置。用户刚在搜狗里改完设置
+（比如清空热键），App 里看到的还是旧的，所以进前台要主动 poke 一次：
+
+- `fetchStateAsync()`：先置占位，再 `sendConfigPoke()`，然后每 250ms 轮询 `hardKbdAtMs`，
+  时间戳 `>=` 本次请求时刻算到货，超过 5 秒显示“获取超时”；
+- 状态行与弹窗**各用各的标志**，进前台只刷状态行，点 [查看切换规则] 只刷弹窗，
+  因为纯查看的动作不该动下面的状态行；
+- 弹窗用自带 `TextView`（`setView`）而不是 `setMessage`，后者在显示过程中改文本不可靠。
+
+**顺带修的坑**：`ConfigProvider.insert` 里把 `e.apply()` 写在中间，后面的 `putString` 会全丢
+（热键名永远不落盘）。**apply() 必须放在所有 put 之后。**
+
 ## 4. BZK 侧（另一侧的配合）
 
 `IMEDispatcher.switchCurrentImeSubtype()` 现在**统一**为"在本输入法内前进到下一个 subtype"：
@@ -407,20 +568,23 @@ synchronized(ImfLock) {
 5. 核对 subtype：`settings get secure enabled_input_methods | tr ':' '\n' | grep -i sogou`
    （顺序即用户拖拽顺序）。
 
-## 6. 开发期开关（`BridgeHook`）
+## 6. 开发期开关
 
-| 常量 | 默认 | 作用 |
-|---|---|---|
-| `ENABLE_STRICT` | `true` | 严格模式的编译期总闸（关掉则界面开关无效；运行期开关见配置 `strict`） |
-| `DEV_PROBE` / `DEV_STATE_PROBE` | `false` | 枚举命令注册表 / diff 状态字段（后者会自己切语言） |
-| `DEV_CMD_TRACE` | `false` | 记录搜狗请求的命令 id + dump 注册表 |
-| `DEV_CB_TRACE` | `false` | 打印每次 subtype 回调 hash |
-| `DEV_STATE_WATCH` | `false` | 每 500ms 采样 `LUa.F()` |
-| `DEV_SUBTYPE_PROBE` | `false` | 测 IME 进程能否写回 subtype（结论：不能） |
-| `DEV_SCHEME_PROBE` | `false` | 找方案状态变量 + 测 `switchToNextInputMethod` |
-| `DEV_SEQ_PROBE` | `false` | 自动跑 拼音→英语→五笔→拼音 命令链并读 `F()` |
-| `DEV_KEY_LOG` | `false` | 打印每个物理按键（定位快捷键走哪条路） |
-| `DEV_PUNCT_PROBE` | `false` | 打印提交到 InputConnection 的原始内容（定位全角转换点） |
+| 常量 | 所在类 | 默认 | 作用 |
+|---|---|---|---|
+| `ENABLE_STRICT` | `BridgeHook` | `true` | 严格模式的编译期总闸（关掉则界面开关无效；运行期开关见配置 `strict`） |
+| `DEV_PROBE` / `DEV_STATE_PROBE` | `BridgeHook` | `false` | 枚举命令注册表 / diff 状态字段（后者会自己切语言） |
+| `DEV_CMD_TRACE` | `BridgeHook` | `false` | 记录搜狗请求的命令 id + dump 注册表 |
+| `DEV_KEY_LOG` | `BridgeHook` | `true` | 打印每个物理按键（定位 Shift+Space / Ctrl+. 走哪条路）。**1.2.2 发布件里也是 true**，下个版本要关掉 |
+| `DEV_AUTOPAIR_LOG` | `BridgeHook` | `false` | 记录引号/括号自动配对的拦截命中 |
+| `DEV_PUNCT_PROBE` | `BridgeHook` | `false` | 打印提交到 InputConnection 的原始内容（定位全角转换点） |
+| `DEV_STATE_WATCH` | `BridgeHook` | `false` | 每 500ms 采样 `LUa.F()` |
+| `DEV_SUBTYPE_PROBE` | `BridgeHook` | `false` | 测 IME 进程能否写回 subtype（结论：不能） |
+| `DEV_SCHEME_PROBE` | `BridgeHook` | `false` | 找方案状态变量 + 测 `switchToNextInputMethod` |
+| `DEV_SEQ_PROBE` | `BridgeHook` | `false` | 自动跑 拼音→英语→五笔→拼音 命令链并读 `F()` |
+| `DEV_CB_TRACE` | `SogouTranslator` | `false` | 打印每次 subtype 回调 hash |
+| `DEV_TOAST_TRACE` | `HotkeyLimitUnlock` | `false` | 打印捕获到的校验器调用栈（定位“解除快捷键设置限制”用） |
+| `DEV_LOG` | `ShiftArrowRepair` | `false` | 选区接管的详细日志（分词窗口、期望焦点核对） |
 
 ## 7. 已知边界
 
@@ -435,6 +599,13 @@ synchronized(ImfLock) {
 - 严格模式下屏幕上的中/英键不再能改语言（"只接受 subtype 信号"的代价）。
 - 依赖 BZK 的新版（统一 `onlyCurrentIme=true` 的 next subtype），**需要软重启 system_server**。
 - 合成 Shift 兜底仍在代码里（命令路径不可用时使用）。
+- **硬键盘热键在本机运行时不触发**：能设、能存，但按下去没反应（连搜狗原生的 `Ctrl+Q` 也一样）。
+  “解除快捷键设置限制”只解决设置页那道拦截，不解决这件事，详见 3.10。
+- 软硬键盘状态机依赖的内部符号是 `iP` / `Lta` / `Gra` / `jua` / `qua` 与 `WO.k()`，
+  热键名依赖 `files/mmkv/HardKeyboardRepository` 的文件布局，冲突修复依赖录制器类 `Ysa`。
+  这些名字一个都不能写死，全部运行时定位；定位失败时只降级（对应开关不生效），不会崩。
+- 软硬键盘那套要**搜狗进程里**的页状态配合：空输入框点击、同一焦点内连点，输入法收不到任何信号，
+  这两条路状态机看不到，只能靠其它入口（工具栏按钮、插件长按）。
 
 ## 8. 构建
 
