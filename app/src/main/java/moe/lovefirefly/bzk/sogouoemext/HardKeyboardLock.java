@@ -258,7 +258,11 @@ final class HardKeyboardLock {
                     final int mode = (Integer) arg;
                     Log.i(TAG, "hardkbd-lock: page.a(" + mode + ") modeHard=" + sModeHard);
                     if (mode == MODE_SOFT && sEnabled && sModeHard) {
-                        Log.i(TAG, "hardkbd-lock: 硬键盘态 → 吞掉切软键盘页");
+                        // 吞掉"切软键盘页"之后，这个输入视图里可能还没有任何页 ⇒
+                        // 工具条要等物理键才出来（用户实测：拿到焦点时不弹）。
+                        // 所以顺手把**硬键盘页**驱动出来（搜狗自己的 startHardKeyboard 那套）。
+                        Log.i(TAG, "hardkbd-lock: 硬键盘态 → 吞掉切软键盘页，并驱动硬键盘页");
+                        startHard();
                         return null;
                     }
                     return chain.proceed();
