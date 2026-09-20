@@ -468,6 +468,8 @@ public final class SogouTranslator {
         sModule = module;
         sCtx = ctx;
         sPkg = pkg;
+        // 「解除快捷键设置限制」：挂一个 Toast 观察点，一次性发现搜狗的快捷键校验入口
+        HotkeyLimitUnlock.install(module, cl);
         try {
             final Class<?> svc = Class.forName(
                     "android.inputmethodservice.InputMethodService", false, cl);
@@ -1007,6 +1009,7 @@ public final class SogouTranslator {
         sWrapSelection = cfg.wrapSelection;
         sCloseSkip = cfg.closeSkip;
         ShiftArrowRepair.setEnabled(cfg.shiftArrowRepair);
+        HotkeyLimitUnlock.setEnabled(cfg.unlockHotkeyLimit);
         // App 侧「长按标题应急切换」的期望值（有才应用；应用完顺带镜像回 App）
         applyWants(raw, LangConfig.parseWants(raw));
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效

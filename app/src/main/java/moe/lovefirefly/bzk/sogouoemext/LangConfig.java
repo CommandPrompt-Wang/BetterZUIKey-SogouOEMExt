@@ -49,6 +49,8 @@ final class LangConfig {
     private static final String KEY_CLOSE_SKIP = "closeSkip";
     /** 功能：Shift+方向键选区修复（宿主把 extend 当 move 用时由我们接管推进）。 */
     private static final String KEY_SHIFT_ARROW_REPAIR = "shiftArrowRepair";
+    /** 功能：解除硬键盘设置里 Alt/Shift+字母 不让设快捷键的限制。 */
+    private static final String KEY_UNLOCK_HOTKEY_LIMIT = "unlockHotkeyLimit";
 
     /** 功能 S 的自定义配对表：若干"前-后"配对依次排列（相邻两字符一组）。空=用输入法默认规则。 */
     private static final String KEY_AUTO_PAIR_TABLE = "autoPairTable";
@@ -148,6 +150,17 @@ final class LangConfig {
     final boolean shiftArrowRepair;
 
     /**
+     * 功能：「解除快捷键设置限制」，默认<b>关</b>。
+     *
+     * <p>开 = 搜狗「硬件键盘设置」录快捷键时不再拦 Alt/Shift 系组合（原本会弹
+     * 「不支持设置Alt/Shift+字母/符号组合键」）。底层组合键模型本来就认 Shift/Alt，
+     * 只是设置页的策略挡着；详见 {@link HotkeyLimitUnlock}。
+     *
+     * <p>默认关：放开后会遇到快捷键冲突、被上层应用抢占、以及 Shift+字母=大写 的问题。
+     */
+    final boolean unlockHotkeyLimit;
+
+    /**
      * 配对表：**开字符 → 闭字符**（由 {@link #autoPairTable} 一次性解析）。
      *
      * <p>用 Map 而不是每次扫字符串：查表 O(1)，而且**方向性由结构本身保证** ——
@@ -159,7 +172,7 @@ final class LangConfig {
             boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering,
             int slashMode, boolean capitalInPinyin, boolean autoPair, String autoPairTable,
             boolean physComplete, boolean longMarks, boolean wrapSelection, boolean closeSkip,
-            boolean shiftArrowRepair) {
+            boolean shiftArrowRepair, boolean unlockHotkeyLimit) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
@@ -176,6 +189,7 @@ final class LangConfig {
         this.wrapSelection = wrapSelection;
         this.closeSkip = closeSkip;
         this.shiftArrowRepair = shiftArrowRepair;
+        this.unlockHotkeyLimit = unlockHotkeyLimit;
         // 每 2 个字符一组：前 = 开字符（key），后 = 闭字符（value）。
         // 只有开字符会成为 key，方向性由此天然保证；末尾落单字符忽略；
         // 重复的开字符按"首次出现生效"（putIfAbsent），与旧的扫描行为一致。
@@ -222,9 +236,10 @@ final class LangConfig {
             final boolean wrapSelection = sp.getBoolean(KEY_WRAP_SELECTION, true);
             final boolean closeSkip = sp.getBoolean(KEY_CLOSE_SKIP, true);
             final boolean shiftArrowRepair = sp.getBoolean(KEY_SHIFT_ARROW_REPAIR, true);
+            final boolean unlockHotkeyLimit = sp.getBoolean(KEY_UNLOCK_HOTKEY_LIMIT, false);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
                     slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks,
-                    wrapSelection, closeSkip, shiftArrowRepair);
+                    wrapSelection, closeSkip, shiftArrowRepair, unlockHotkeyLimit);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return defaults();
@@ -249,6 +264,7 @@ final class LangConfig {
                 + "&" + KEY_WRAP_SELECTION + "=" + sp.getBoolean(KEY_WRAP_SELECTION, true)
                 + "&" + KEY_CLOSE_SKIP + "=" + sp.getBoolean(KEY_CLOSE_SKIP, true)
                 + "&" + KEY_SHIFT_ARROW_REPAIR + "=" + sp.getBoolean(KEY_SHIFT_ARROW_REPAIR, true)
+                + "&" + KEY_UNLOCK_HOTKEY_LIMIT + "=" + sp.getBoolean(KEY_UNLOCK_HOTKEY_LIMIT, false)
                 // 配对串里可能出现 & 或 =，必须转义，否则会破坏 k=v&k=v 的行格式
                 + "&" + KEY_AUTO_PAIR_TABLE + "=" + encodeTable(
                         sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE))
@@ -340,6 +356,7 @@ final class LangConfig {
             boolean wrapSelection = true;
             boolean closeSkip = true;
             boolean shiftArrowRepair = true;
+            boolean unlockHotkeyLimit = false;
             for (String kv : s.split("&")) {
                 final int i = kv.indexOf('=');
                 if (i <= 0) continue;
@@ -361,13 +378,14 @@ final class LangConfig {
                     case KEY_WRAP_SELECTION: wrapSelection = Boolean.parseBoolean(v); break;
                     case KEY_CLOSE_SKIP: closeSkip = Boolean.parseBoolean(v); break;
                     case KEY_SHIFT_ARROW_REPAIR: shiftArrowRepair = Boolean.parseBoolean(v); break;
+                    case KEY_UNLOCK_HOTKEY_LIMIT: unlockHotkeyLimit = Boolean.parseBoolean(v); break;
                     case KEY_AUTO_PAIR_TABLE: autoPairTable = decodeTable(v); break;
                     default: break;
                 }
             }
             return parse(order, divider, strict, full, smart, en, num, slash, capital,
                     autoPair, autoPairTable, physComplete, longMarks, wrapSelection, closeSkip,
-                    shiftArrowRepair);
+                    shiftArrowRepair, unlockHotkeyLimit);
         } catch (Throwable err) {
             Log.w(TAG, "parseDump failed: " + err);
             return null;
@@ -432,7 +450,7 @@ final class LangConfig {
     static LangConfig defaults() {
         return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
                 false, true, true, true, true, 0, true, false, SUGGEST_PAIR_TABLE, false, true,
-                true, true, true);
+                true, true, true, false);
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
@@ -468,14 +486,15 @@ final class LangConfig {
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
             boolean capitalInPinyin) {
         return parse(raw, divider, strict, fullwidth, smartPunct, enPunct, smartNumbering,
-                slashMode, capitalInPinyin, true, SUGGEST_PAIR_TABLE, true, true, true, true, true);
+                slashMode, capitalInPinyin, true, SUGGEST_PAIR_TABLE, true, true, true, true, true,
+                false);
     }
 
     static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
             boolean capitalInPinyin, boolean autoPair, String autoPairTable,
             boolean physComplete, boolean longMarks, boolean wrapSelection, boolean closeSkip,
-            boolean shiftArrowRepair) {
+            boolean shiftArrowRepair, boolean unlockHotkeyLimit) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -489,7 +508,7 @@ final class LangConfig {
         int d = Math.max(0, Math.min(divider, list.size()));
         return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct, smartNumbering,
                 slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks,
-                wrapSelection, closeSkip, shiftArrowRepair);
+                wrapSelection, closeSkip, shiftArrowRepair, unlockHotkeyLimit);
     }
 
     /**
@@ -531,6 +550,7 @@ final class LangConfig {
                 + "|wrap=" + wrapSelection
                 + "|closeskip=" + closeSkip
                 + "|shiftarrow=" + shiftArrowRepair
+                + "|unlockhotkey=" + unlockHotkeyLimit
                 // 表内容进签名，改表才能触发热重载；用清洗后的形式，
                 // 这样只改分组换行（配对结果不变）不会白热重载一次，日志也仍是单行
                 + "|pairtbl=" + cleanTable(autoPairTable);

@@ -54,6 +54,7 @@ public class MainActivity extends AppCompatActivity {
     private MaterialSwitch wrapSelectionSwitch;
     private MaterialSwitch closeSkipSwitch;
     private MaterialSwitch shiftArrowSwitch;
+    private MaterialSwitch unlockHotkeySwitch;
     private TextView editPairTableRow;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
@@ -199,9 +200,14 @@ public class MainActivity extends AppCompatActivity {
                 + "当手动移动光标位置后恢复正常闭合");
 
         // 纯开关（无快捷键）：把 extend 当 move 用的宿主里，Shift+方向键由模块接管选字/选词
-        shiftArrowSwitch = addSwitch(strictBox, "Shift+方向键选区修复",
-                "部分应用（如网页输入框）把 Shift+方向键的\"扩展选区\"做成了移光标，"
-                + "导致选不中。开启后由模块接管推进：逐字，按住 Ctrl 时按词。");
+        shiftArrowSwitch = addSwitch(strictBox, "选区与分词修复",
+                "开启后由模块接管 Ctrl/Shift 分词/选区。\n"
+                + "部分输入框机制导致默认行为无法有效选区和分词。");
+
+        // 纯开关（无快捷键）：解除硬键盘设置里 Alt/Shift+字母 不让设的限制
+        unlockHotkeySwitch = addSwitch(strictBox, "解除快捷键设置限制",
+                "解除无法设置Alt或Shift+字母快捷键的问题\n"
+                + "注意：注意快捷键冲突与上层抢占问题；Shift+字母为大写快捷键，谨慎设置。");
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -582,6 +588,7 @@ public class MainActivity extends AppCompatActivity {
         bindBoolSwitch(wrapSelectionSwitch, "wrapSelection", cfg.wrapSelection);
         bindBoolSwitch(closeSkipSwitch, "closeSkip", cfg.closeSkip);
         bindBoolSwitch(shiftArrowSwitch, "shiftArrowRepair", cfg.shiftArrowRepair);
+        bindBoolSwitch(unlockHotkeySwitch, "unlockHotkeyLimit", cfg.unlockHotkeyLimit);
         bindSlashSpinner(cfg.slashMode);
     }
 
