@@ -29,10 +29,20 @@ final class HotkeyLimitUnlock {
 
     private static final String TAG = "BZK-SogouOEMExt";
 
+    /** 开发期（一次性）：把设置页弹出的每个 Toast 连同调用栈都打出来（定位"空值冲突"校验在哪）。 */
+    private static final boolean DEV_TOAST_TRACE = false;
+
     /** 功能开关（配置热更新）。 */
     private static volatile boolean sEnabled;
 
     private static volatile boolean sHooked;
+
+    /** 「该…已被占用」冲突提示的资源 id（反汇编 {@code Ysa.a(String)Z} 得到）。 */
+    private static final int RES_CONFLICT = 2131624296;
+
+    /** 空值豁免：是否已经找到并挂上"冲突检查"那个函数。 */
+    private static volatile boolean sConflictHooked;
+    private static volatile boolean sConflictTried;
     private static volatile boolean sTried;
     private static volatile XposedModule sModule;
     private static volatile ClassLoader sLoader;
@@ -48,6 +58,7 @@ final class HotkeyLimitUnlock {
         if (module == null || cl == null) return;
         sModule = module;
         sLoader = cl;
+        hookTextWatcher(module);
         try {
             final Class<?> toast = Class.forName("android.widget.Toast");
             int n = 0;
@@ -56,6 +67,35 @@ final class HotkeyLimitUnlock {
                 m.setAccessible(true);
                 try {
                     module.hook(m).intercept(chain -> {
+                        if (DEV_TOAST_TRACE) {
+                            final StringBuilder sb = new StringBuilder("toast-trace: arg1=");
+                            for (int i = 0; i < m.getParameterCount() && i < 3; i++) {
+                                sb.append(chain.getArg(i)).append(' ');
+                            }
+                            sb.append("| ");
+                            int depth = 0;
+                            for (StackTraceElement f : Thread.currentThread().getStackTrace()) {
+                                final String c = f.getClassName();
+                                if (c.startsWith("android.") || c.startsWith("java.")
+                                        || c.startsWith("io.github.libxposed")
+                                        || c.startsWith("de.robv")) {
+                                    continue;
+                                }
+                                sb.append(c).append('#').append(f.getMethodName()).append("<-");
+                                if (++depth >= 10) break;
+                            }
+                            Log.i(TAG, sb.toString());
+                        }
+                        // 冲突提示（"该…已被占用"）：找出报冲突的那个函数，只对"空值"豁免
+                        if (sEnabled && !sConflictHooked && !sConflictTried
+                                && chain.getArg(0) instanceof android.content.Context
+                                && isConflictToast(chain)) {
+                            try {
+                                discoverConflictHook(Thread.currentThread().getStackTrace());
+                            } catch (Throwable err) {
+                                Log.w(TAG, "hotkeyfix: discover conflict failed: " + err);
+                            }
+                        }
                         // 只在"开关开着 && 还没找到校验入口"时做点事；其余一律原样放行
                         if (sEnabled && !sHooked && !sTried) {
                             try {
@@ -74,6 +114,129 @@ final class HotkeyLimitUnlock {
         } catch (Throwable err) {
             Log.w(TAG, "hotkeyunlock: install failed: " + err);
         }
+    }
+
+    /** 这条 Toast 是不是"…已被占用"冲突提示（资源 id 命中）。 */
+    private static boolean isConflictToast(io.github.libxposed.api.XposedInterface.Chain chain) {
+        for (int i = 1; i < 3; i++) {
+            final Object a = chain.getArg(i);
+            if (a instanceof Integer && (Integer) a == RES_CONFLICT) return true;
+        }
+        return false;
+    }
+
+    /**
+     * 钩 {@code EditText.addTextChangedListener(TextWatcher)}：设置页给"录制快捷键"的输入框
+     * 挂监听器时，那个 TextWatcher 的类里就带着冲突检查（真机 = {@code Ysa}）。
+     *
+     * <p>钩它的 {@code (String)Z} 方法并做**空值豁免**：空串不算"已被占用"。
+     * （比从 Toast 栈里认更稳 —— 真机上那条冲突提示并不走 {@code Toast.makeText}。）
+     */
+    private static void hookTextWatcher(XposedModule module) {
+        try {
+            // addTextChangedListener 声明在 TextView 上（EditText 继承），所以要沿继承链找
+            Class<?> edit = Class.forName("android.widget.EditText");
+            java.util.List<Method> cands = new java.util.ArrayList<>();
+            for (Class<?> c = edit; c != null && c != Object.class; c = c.getSuperclass()) {
+                for (Method m : c.getDeclaredMethods()) {
+                    if (!m.getName().equals("addTextChangedListener")) continue;
+                    if (m.getParameterCount() != 1) continue;
+                    cands.add(m);
+                }
+            }
+            for (Method m : cands) {
+                m.setAccessible(true);
+                module.hook(m).intercept(chain -> {
+                    final Object w = chain.getArg(0);
+                    if (sEnabled && w != null) {
+                        try {
+                            hookEmptyExempt(w.getClass());
+                        } catch (Throwable err) {
+                            Log.w(TAG, "hotkeyfix: watcher hook failed: " + err);
+                        }
+                    }
+                    return chain.proceed();
+                });
+            }
+            Log.i(TAG, "hotkeyfix: addTextChangedListener 钩子已装 x" + cands.size());
+        } catch (Throwable err) {
+            Log.w(TAG, "hotkeyfix: addTextChangedListener 钩子失败: " + err);
+        }
+    }
+
+    /** 给"录制器类"里的 {@code (String)Z} 方法装空值豁免（同一类只装一次）。 */
+    private static void hookEmptyExempt(Class<?> cls) {
+        for (Method m : cls.getDeclaredMethods()) {
+            if (m.getParameterCount() != 1 || m.getParameterTypes()[0] != String.class) continue;
+            if (m.getReturnType() != boolean.class) continue;
+            try {
+                m.setAccessible(true);
+                sModule.hook(m).intercept(chain -> {
+                    final Object arg = chain.getArg(0);
+                    if (sEnabled && arg instanceof String && ((String) arg).isEmpty()) {
+                        Log.i(TAG, "hotkeyfix: 空热键不算冲突 → 放行");
+                        return Boolean.FALSE;
+                    }
+                    return chain.proceed();
+                });
+                Log.i(TAG, "hotkeyfix: 空值豁免已装 " + cls.getName() + "#" + m.getName()
+                        + "(String)Z");
+            } catch (Throwable err) {
+                Log.w(TAG, "hotkeyfix: 装空值豁免失败 " + cls.getName() + "#" + m.getName()
+                        + ": " + err);
+            }
+        }
+    }
+
+    /**
+     * 从"冲突提示"的调用栈里找出那个 {@code (String)Z} 的检查函数，挂上**空值豁免**。
+     *
+     * <p>病灶（真机反汇编 {@code Ysa.a(String)Z}）：它拿"热键表里那条的组合"和"当前编辑框内容"
+     * 做 {@code equalsIgnoreCase} —— 两个都是空串时也相等 ⇒ 报"该…已被占用"（∅∩∅≠∅）。
+     * 所以这里只对**空参数**返回 false（不冲突），真冲突照旧。
+     */
+    private static void discoverConflictHook(StackTraceElement[] st) {
+        if (st == null) return;
+        for (StackTraceElement f : st) {
+            final String cn = f.getClassName();
+            if (cn.startsWith("android.") || cn.startsWith("java.")
+                    || cn.startsWith("moe.lovefirefly") || cn.startsWith("io.github.libxposed")
+                    || cn.startsWith("de.robv")) {
+                continue;
+            }
+            if (hookConflictCheck(cn, f.getMethodName())) return;
+        }
+        sConflictTried = true;
+        Log.w(TAG, "hotkeyfix: 没从冲突提示里认出检查函数");
+    }
+
+    private static boolean hookConflictCheck(String className, String methodName) {
+        final XposedModule module = sModule;
+        if (module == null) return false;
+        try {
+            final Class<?> cls = Class.forName(className, false, sLoader);
+            for (Method m : cls.getDeclaredMethods()) {
+                if (!m.getName().equals(methodName)) continue;
+                if (m.getParameterCount() != 1 || m.getParameterTypes()[0] != String.class) continue;
+                if (m.getReturnType() != boolean.class) continue;
+                m.setAccessible(true);
+                module.hook(m).intercept(chain -> {
+                    final Object arg = chain.getArg(0);
+                    if (sEnabled && arg instanceof String && ((String) arg).isEmpty()) {
+                        Log.i(TAG, "hotkeyfix: 空热键不算冲突 → 放行");
+                        return Boolean.FALSE;
+                    }
+                    return chain.proceed();
+                });
+                sConflictHooked = true;
+                Log.i(TAG, "hotkeyfix: 已挂钩冲突检查 " + className + "#" + methodName
+                        + "(String)Z —— 空值不再报\"已被占用\"");
+                return true;
+            }
+        } catch (Throwable err) {
+            Log.w(TAG, "hotkeyfix: hook conflict " + className + "#" + methodName + " failed: " + err);
+        }
+        return false;
     }
 
     /**
