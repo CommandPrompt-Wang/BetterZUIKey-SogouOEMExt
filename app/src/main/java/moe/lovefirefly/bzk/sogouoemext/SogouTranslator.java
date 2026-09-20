@@ -477,7 +477,13 @@ public final class SogouTranslator {
                         final Object a2 = chain.getArg(2);
                         final Object a3 = chain.getArg(3);
                         if (a2 instanceof Integer && a3 instanceof Integer) {
-                            AutoPairHook.onSelectionChanged((Integer) a2, (Integer) a3);
+                            final int ss = (Integer) a2;
+                            final int se = (Integer) a3;
+                            // 我们自己补出来的区间不算"用户移了光标"，否则会误触发 closeSkip 的重置
+                            if (!ShiftArrowRepair.isSelfUpdate()) {
+                                AutoPairHook.onSelectionChanged(ss, se);
+                            }
+                            ShiftArrowRepair.onSelection(sService, ss, se);
                         }
                         if (AutoPairHook.shouldSwallowSelectionUpdate()) {
                             if (BridgeHook.DEV_AUTOPAIR_LOG) {
@@ -768,6 +774,11 @@ public final class SogouTranslator {
                         // 标记"正在处理硬件按键"：软键盘不走这两个 hook，所以它能把
                         // 物理键盘的提交与软键盘的提交区分开（物理补全只认前者）
                         AutoPairHook.markHardwareKey(down);
+                        // Shift+方向键选区修复：判定出坏宿主（如 Lexical）后由我们接管推进选区
+                        if (ShiftArrowRepair.onKey(svc, down, chain.getArg(1))
+                                == ShiftArrowRepair.CONSUMED) {
+                            return true;
+                        }
                         if (chain.getArg(1) instanceof KeyEvent) {
                             final KeyEvent kev = (KeyEvent) chain.getArg(1);
                             final int u = kev.getUnicodeChar();
