@@ -78,7 +78,7 @@ public class ConfigProvider extends ContentProvider {
 
     /**
      * 状态位镜像：模块（搜狗进程）在热键切换状态位时调这里，把 fullwidth / enPunct /
-     * physComplete 三个布尔值写给 App —— App 侧读不到搜狗进程的私有 prefs。
+     * physComplete、hardKbd 四个布尔值写给 App —— App 侧读不到搜狗进程的私有 prefs。
      */
     @Nullable
     @Override
@@ -92,13 +92,20 @@ public class ConfigProvider extends ContentProvider {
                 .getSharedPreferences(STATE_PREFS, Context.MODE_PRIVATE);
         final SharedPreferences.Editor e = sp.edit();
         int n = 0;
-        for (String k : new String[]{"fullwidth", "enPunct", "physComplete"}) {
+        for (String k : new String[]{"fullwidth", "enPunct", "physComplete", "hardKbd"}) {
             if (values.containsKey(k)) {
                 e.putBoolean(k, Boolean.TRUE.equals(values.getAsBoolean(k)));
                 n++;
             }
         }
         if (n > 0) e.apply();
+        // 硬键盘状态是"会自己变"的（物理键、CSP 都会改），不像全角/标点只由 App 的长按决定。
+        // App 侧刷新逻辑是"写过 want 就优先显示 want"，所以镜像真状态时必须把过期的 want 清掉，
+        // 否则状态行会永远停在用户上次长按的值上（真机踩过）。
+        if (values.containsKey("hardKbd")) {
+            getContext().getSharedPreferences(LangConfig.PREFS_NAME, Context.MODE_PRIVATE)
+                    .edit().remove("wantHardKbd").apply();
+        }
         android.util.Log.i(TAG, "provider: state mirrored (" + n + ") " + values);
         return uri;
     }

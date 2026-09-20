@@ -49,8 +49,11 @@ final class LangConfig {
     private static final String KEY_CLOSE_SKIP = "closeSkip";
     /** 功能：Shift+方向键选区修复（宿主把 extend 当 move 用时由我们接管推进）。 */
     private static final String KEY_SHIFT_ARROW_REPAIR = "shiftArrowRepair";
-    /** 功能：解除硬键盘设置里 Alt/Shift+字母 不让设快捷键的限制。 */
+    /** 功能：解除「外接键盘设置」里 Alt/Shift+字母 不让设快捷键的限制。 */
     private static final String KEY_UNLOCK_HOTKEY_LIMIT = "unlockHotkeyLimit";
+
+    /** 「锁定软硬键盘模式」功能开关（默认关：不主动接管，用户开了才生效）。 */
+    static final String KEY_HARD_KBD_LOCK = "hardKbdLock";
 
     /** 功能 S 的自定义配对表：若干"前-后"配对依次排列（相邻两字符一组）。空=用输入法默认规则。 */
     private static final String KEY_AUTO_PAIR_TABLE = "autoPairTable";
@@ -152,13 +155,20 @@ final class LangConfig {
     /**
      * 功能：「解除快捷键设置限制」，默认<b>关</b>。
      *
-     * <p>开 = 搜狗「硬件键盘设置」录快捷键时不再拦 Alt/Shift 系组合（原本会弹
+     * <p>开 = 搜狗「外接键盘设置」录快捷键时不再拦 Alt/Shift 系组合（原本会弹
      * 「不支持设置Alt/Shift+字母/符号组合键」）。底层组合键模型本来就认 Shift/Alt，
      * 只是设置页的策略挡着；详见 {@link HotkeyLimitUnlock}。
      *
      * <p>默认关：放开后会遇到快捷键冲突、被上层应用抢占、以及 Shift+字母=大写 的问题。
      */
     final boolean unlockHotkeyLimit;
+
+    /**
+     * 「锁定软硬键盘模式」：处于硬键盘态时，点输入框不再掉回软键盘（详见 HardKeyboardLock）。
+     *
+     * <p>默认关：这会改变"点输入框"的既有行为，装完不主动接管，需用户在设置页打开。
+     */
+    final boolean hardKbdLock;
 
     /**
      * 配对表：**开字符 → 闭字符**（由 {@link #autoPairTable} 一次性解析）。
@@ -172,7 +182,7 @@ final class LangConfig {
             boolean fullwidth, boolean smartPunct, boolean enPunct, boolean smartNumbering,
             int slashMode, boolean capitalInPinyin, boolean autoPair, String autoPairTable,
             boolean physComplete, boolean longMarks, boolean wrapSelection, boolean closeSkip,
-            boolean shiftArrowRepair, boolean unlockHotkeyLimit) {
+            boolean shiftArrowRepair, boolean unlockHotkeyLimit, boolean hardKbdLock) {
         this.order = order;
         this.divider = divider;
         this.strict = strict;
@@ -190,6 +200,7 @@ final class LangConfig {
         this.closeSkip = closeSkip;
         this.shiftArrowRepair = shiftArrowRepair;
         this.unlockHotkeyLimit = unlockHotkeyLimit;
+        this.hardKbdLock = hardKbdLock;
         // 每 2 个字符一组：前 = 开字符（key），后 = 闭字符（value）。
         // 只有开字符会成为 key，方向性由此天然保证；末尾落单字符忽略；
         // 重复的开字符按"首次出现生效"（putIfAbsent），与旧的扫描行为一致。
@@ -237,9 +248,10 @@ final class LangConfig {
             final boolean closeSkip = sp.getBoolean(KEY_CLOSE_SKIP, true);
             final boolean shiftArrowRepair = sp.getBoolean(KEY_SHIFT_ARROW_REPAIR, true);
             final boolean unlockHotkeyLimit = sp.getBoolean(KEY_UNLOCK_HOTKEY_LIMIT, false);
+            final boolean hardKbdLock = sp.getBoolean(KEY_HARD_KBD_LOCK, false);
             return parse(raw, div, strict, fullwidth, smartPunct, enPunct, smartNumbering,
                     slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks,
-                    wrapSelection, closeSkip, shiftArrowRepair, unlockHotkeyLimit);
+                    wrapSelection, closeSkip, shiftArrowRepair, unlockHotkeyLimit, hardKbdLock);
         } catch (Throwable err) {
             Log.w(TAG, "config load failed, using defaults: " + err);
             return defaults();
@@ -265,6 +277,7 @@ final class LangConfig {
                 + "&" + KEY_CLOSE_SKIP + "=" + sp.getBoolean(KEY_CLOSE_SKIP, true)
                 + "&" + KEY_SHIFT_ARROW_REPAIR + "=" + sp.getBoolean(KEY_SHIFT_ARROW_REPAIR, true)
                 + "&" + KEY_UNLOCK_HOTKEY_LIMIT + "=" + sp.getBoolean(KEY_UNLOCK_HOTKEY_LIMIT, false)
+                + "&" + KEY_HARD_KBD_LOCK + "=" + sp.getBoolean(KEY_HARD_KBD_LOCK, false)
                 // 配对串里可能出现 & 或 =，必须转义，否则会破坏 k=v&k=v 的行格式
                 + "&" + KEY_AUTO_PAIR_TABLE + "=" + encodeTable(
                         sp.getString(KEY_AUTO_PAIR_TABLE, SUGGEST_PAIR_TABLE))
@@ -275,6 +288,8 @@ final class LangConfig {
                         ? "&" + KEY_WANT_ENP + "=" + sp.getBoolean(KEY_WANT_ENP, false) : "")
                 + (sp.contains(KEY_WANT_PHYS)
                         ? "&" + KEY_WANT_PHYS + "=" + sp.getBoolean(KEY_WANT_PHYS, true) : "")
+                + (sp.contains(KEY_WANT_HARD)
+                        ? "&" + KEY_WANT_HARD + "=" + sp.getBoolean(KEY_WANT_HARD, false) : "")
                 + "&" + KEY_WANT_SEQ + "=" + sp.getLong(KEY_WANT_SEQ, 0L);
     }
 
@@ -282,6 +297,9 @@ final class LangConfig {
     static final String KEY_WANT_FULL = "wantFullwidth";
     static final String KEY_WANT_ENP = "wantEnPunct";
     static final String KEY_WANT_PHYS = "wantPhysComplete";
+
+    /** App 长按"锁定软硬键盘模式"那张卡片时写的期望状态（硬键盘 true / 软键盘 false）。 */
+    static final String KEY_WANT_HARD = "wantHardKbd";
     /** 期望值的序号：只认比上次处理过的更新的一条（否则热键改回去会被旧请求"纠正"回来 ✗）。 */
     static final String KEY_WANT_SEQ = "wantSeq";
 
@@ -298,7 +316,8 @@ final class LangConfig {
             final int i = kv.indexOf('=');
             if (i <= 0) continue;
             final String k = kv.substring(0, i);
-            if (KEY_WANT_FULL.equals(k) || KEY_WANT_ENP.equals(k) || KEY_WANT_PHYS.equals(k)) {
+            if (KEY_WANT_FULL.equals(k) || KEY_WANT_ENP.equals(k) || KEY_WANT_PHYS.equals(k)
+                    || KEY_WANT_HARD.equals(k)) {
                 out.put(k, Boolean.parseBoolean(kv.substring(i + 1)));
             }
         }
@@ -357,6 +376,7 @@ final class LangConfig {
             boolean closeSkip = true;
             boolean shiftArrowRepair = true;
             boolean unlockHotkeyLimit = false;
+            boolean hardKbdLock = false;
             for (String kv : s.split("&")) {
                 final int i = kv.indexOf('=');
                 if (i <= 0) continue;
@@ -379,13 +399,14 @@ final class LangConfig {
                     case KEY_CLOSE_SKIP: closeSkip = Boolean.parseBoolean(v); break;
                     case KEY_SHIFT_ARROW_REPAIR: shiftArrowRepair = Boolean.parseBoolean(v); break;
                     case KEY_UNLOCK_HOTKEY_LIMIT: unlockHotkeyLimit = Boolean.parseBoolean(v); break;
+                    case KEY_HARD_KBD_LOCK: hardKbdLock = Boolean.parseBoolean(v); break;
                     case KEY_AUTO_PAIR_TABLE: autoPairTable = decodeTable(v); break;
                     default: break;
                 }
             }
             return parse(order, divider, strict, full, smart, en, num, slash, capital,
                     autoPair, autoPairTable, physComplete, longMarks, wrapSelection, closeSkip,
-                    shiftArrowRepair, unlockHotkeyLimit);
+                    shiftArrowRepair, unlockHotkeyLimit, hardKbdLock);
         } catch (Throwable err) {
             Log.w(TAG, "parseDump failed: " + err);
             return null;
@@ -450,7 +471,7 @@ final class LangConfig {
     static LangConfig defaults() {
         return parse(LangSpec.DEFAULT_ORDER, LangSpec.DEFAULT_DIVIDER,
                 false, true, true, true, true, 0, true, false, SUGGEST_PAIR_TABLE, false, true,
-                true, true, true, false);
+                true, true, true, false, false);
     }
 
     /** 容错解析：未知/重复项丢弃，缺失项补到分隔线下方，保证三项齐全。 */
@@ -487,14 +508,14 @@ final class LangConfig {
             boolean capitalInPinyin) {
         return parse(raw, divider, strict, fullwidth, smartPunct, enPunct, smartNumbering,
                 slashMode, capitalInPinyin, true, SUGGEST_PAIR_TABLE, true, true, true, true, true,
-                false);
+                false, false);
     }
 
     static LangConfig parse(String raw, int divider, boolean strict, boolean fullwidth,
             boolean smartPunct, boolean enPunct, boolean smartNumbering, int slashMode,
             boolean capitalInPinyin, boolean autoPair, String autoPairTable,
             boolean physComplete, boolean longMarks, boolean wrapSelection, boolean closeSkip,
-            boolean shiftArrowRepair, boolean unlockHotkeyLimit) {
+            boolean shiftArrowRepair, boolean unlockHotkeyLimit, boolean hardKbdLock) {
         final List<String> list = new ArrayList<>();
         if (raw != null) {
             for (String p : raw.split(",")) {
@@ -508,7 +529,7 @@ final class LangConfig {
         int d = Math.max(0, Math.min(divider, list.size()));
         return new LangConfig(list, d, strict, fullwidth, smartPunct, enPunct, smartNumbering,
                 slashMode, capitalInPinyin, autoPair, autoPairTable, physComplete, longMarks,
-                wrapSelection, closeSkip, shiftArrowRepair, unlockHotkeyLimit);
+                wrapSelection, closeSkip, shiftArrowRepair, unlockHotkeyLimit, hardKbdLock);
     }
 
     /**
@@ -551,6 +572,7 @@ final class LangConfig {
                 + "|closeskip=" + closeSkip
                 + "|shiftarrow=" + shiftArrowRepair
                 + "|unlockhotkey=" + unlockHotkeyLimit
+                + "|hardkbdlock=" + hardKbdLock
                 // 表内容进签名，改表才能触发热重载；用清洗后的形式，
                 // 这样只改分组换行（配对结果不变）不会白热重载一次，日志也仍是单行
                 + "|pairtbl=" + cleanTable(autoPairTable);

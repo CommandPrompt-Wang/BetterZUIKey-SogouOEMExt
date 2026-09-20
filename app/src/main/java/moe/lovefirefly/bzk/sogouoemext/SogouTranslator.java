@@ -52,9 +52,13 @@ public final class SogouTranslator {
     private static final String CMD_CLASS_ZH_TO_EN = "cta";   // SwitchChineseEnglishWuBi
     private static final String CMD_CLASS_EN_TO_ZH = "dta";   // SwitchEnglishChinese
 
+    /** 注册表里"切回软键盘"的固定 id（真机验证 = CSP 硬→软 走的命令，类名 jua）。 */
+    private static final int CMD_ID_SOFT_KEYBOARD = -3;
+
     private static volatile XposedModule sModule;
     private static volatile Object sService;
     private static volatile Object sWo;        // coa.b : WO
+    private static volatile Object sCmdSoftSwitch;   // 注册表 id -3：切回软键盘
     private static volatile Object sEp;        // WO.e  : eP（命令注册表）
     private static volatile int sCmdZhToEn = Integer.MIN_VALUE;
     private static volatile int sCmdEnToZh = Integer.MIN_VALUE;
@@ -251,6 +255,10 @@ public final class SogouTranslator {
             if (e != null) e.putBoolean(KEY_MODE_EN, we);
             dirty = true;
         }
+        final Boolean wh = wants.get(LangConfig.KEY_WANT_HARD);
+        if (wh != null && wh != HardKeyboardLock.wantHard()) {
+            HardKeyboardLock.applyWant(wh);
+        }
         final Boolean wp = wants.get(LangConfig.KEY_WANT_PHYS);
         if (wp != null && wp != stateBit("physComplete", true)) {
             sPhysState = wp;
@@ -278,6 +286,7 @@ public final class SogouTranslator {
                 v.put("fullwidth", currentFullWidth());
                 v.put("enPunct", currentEnPunct());
                 v.put("physComplete", physCompleteActive());
+                v.put("hardKbd", HardKeyboardLock.hardModeNow());
                 ctx.getContentResolver().insert(ConfigProvider.URI, v);
             } catch (Throwable t) {
                 Log.w(TAG, "mirrorState failed: " + t);
@@ -869,6 +878,8 @@ public final class SogouTranslator {
                             }
                             final boolean ctrl = (meta2 & KeyEvent.META_CTRL_ON) != 0;
                             final boolean shift = (meta2 & KeyEvent.META_SHIFT_ON) != 0;
+                            // 状态机：软键盘态下碰物理键盘 ⇒ 切硬键盘（硬键盘态交给搜狗自己的热键）
+                            HardKeyboardLock.noteKey(kc2, meta2, down);
                             // Shift+Space → 全角/半角
                             if (kc2 == KeyEvent.KEYCODE_SPACE && shift && !ctrl) {
                                 if (down && kev.getRepeatCount() == 0) {
@@ -1031,6 +1042,8 @@ public final class SogouTranslator {
         applyWants(raw, LangConfig.parseWants(raw));
         // 严格模式跟着配置走：安装时只设过一次，之后 App 里拨它必须立即生效
         // （否则 sStrict 永远停在会话启动时读到的那个值）
+        HardKeyboardLock.setEnabled(cfg.hardKbdLock);
+        HardKeyboardLock.setOnStateChanged(SogouTranslator::mirrorState);
         final boolean strictNow = BridgeHook.ENABLE_STRICT && cfg.strict;
         if (strictNow != sStrict) Log.i(TAG, "strict -> " + strictNow);
         setStrict(strictNow);
@@ -1072,6 +1085,7 @@ public final class SogouTranslator {
                 if (cmd == null) continue;
                 final String cn = cmd.getClass().getSimpleName();
                 sCommands.put(cn, cmd);
+                if (id == CMD_ID_SOFT_KEYBOARD) sCmdSoftSwitch = cmd;
                 if (sCommandTrace) {
                     Log.i(TAG, "cmd id=" + id + " class=" + cn + " name=" + cmdName(cmd));
                 }
@@ -1089,6 +1103,8 @@ public final class SogouTranslator {
                 traceCommandRequests();
             }
             installLanguageGuards();      // 常驻：是否生效由开关在运行时判定
+            HardKeyboardLock.install(sModule, sWo, sService);
+            HardKeyboardLock.hookSoftSwitchCommand(sModule, sCmdSoftSwitch, sWo);
             // 自己执行时用缓存的方法（不走 eP.a(int)），与守卫同一份 Method
             if (sCmdZhToEnObj != null) {
                 sRunZhToEn = execMethod(sCmdZhToEnObj, sWo);

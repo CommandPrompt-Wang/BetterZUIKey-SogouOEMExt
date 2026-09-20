@@ -55,6 +55,7 @@ public class MainActivity extends AppCompatActivity {
     private MaterialSwitch closeSkipSwitch;
     private MaterialSwitch shiftArrowSwitch;
     private MaterialSwitch unlockHotkeySwitch;
+    private MaterialSwitch hardKbdSwitch;
     private TextView editPairTableRow;
     private com.google.android.material.textfield.MaterialAutoCompleteTextView slashField;
 
@@ -208,6 +209,13 @@ public class MainActivity extends AppCompatActivity {
         unlockHotkeySwitch = addSwitch(strictBox, "解除快捷键设置限制",
                 "解除无法设置Alt或Shift+字母快捷键的问题\n"
                 + "注意：注意快捷键冲突与上层抢占问题；Shift+字母为大写快捷键，谨慎设置。");
+
+        // 锁定软硬键盘模式：功能开关 + 状态行（硬键盘/软键盘）+ 整卡长按应急切换
+        hardKbdSwitch = addStatusSwitch(strictBox, "锁定软硬键盘模式（长按切换）",
+                "软硬键盘切换功能在本平台几乎没有意义，硬键盘下仍然会因为点击而弹出软键盘，"
+                + "反而导致快捷键完全失效。\n长按整行亦可切换硬键盘/软键盘状态",
+                LangConfig.KEY_HARD_KBD_LOCK, true, "hardKbd", false, "硬键盘", "软键盘",
+                LangConfig.KEY_WANT_HARD);
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
         editPairTableRow = new TextView(this);
@@ -589,6 +597,7 @@ public class MainActivity extends AppCompatActivity {
         bindBoolSwitch(closeSkipSwitch, "closeSkip", cfg.closeSkip);
         bindBoolSwitch(shiftArrowSwitch, "shiftArrowRepair", cfg.shiftArrowRepair);
         bindBoolSwitch(unlockHotkeySwitch, "unlockHotkeyLimit", cfg.unlockHotkeyLimit);
+        bindBoolSwitch(hardKbdSwitch, "hardKbdLock", cfg.hardKbdLock);
         bindSlashSpinner(cfg.slashMode);
     }
 
