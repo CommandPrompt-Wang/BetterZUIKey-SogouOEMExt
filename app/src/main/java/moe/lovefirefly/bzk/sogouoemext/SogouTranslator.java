@@ -792,14 +792,26 @@ public final class SogouTranslator {
     }
 
     /**
-     * 吞掉搜狗原生的"切语言"组合键（Ctrl+Space / Ctrl+Shift）。
+     * 吞掉搜狗原生的"切语言"组合键（只吞 Ctrl+Space；Ctrl+Shift 交给命令级守卫）。
      *
      * <p>为什么必须做到按键这一层：实测搜狗的 Ctrl+Space **不走** `cta/dta` 命令
      * （既没有 eP.a(int) 追踪行，也没有命令级守卫的 blocked 行）——它在内部直接切语言
-     * 并回写 subtype。命令级守卫拦不到，只能在这里吞键。
+     * 并回写 framework subtype。命令级守卫拦不到，只能在这里吞键。
+     *
+     * <p><b>2026-09-20 对照实验（把 BZK 的语言切换绑定改成 WIN，排除 BZK 干扰后）：</b>
+     * <pre>
+     * 放行版：Ctrl+Space 按下+抬起都交给搜狗
+     *   → 3ms 后 framework subtype 翻成 en（marker en, f=0）→ 模块跟随执行 cta → english ok
+     *   → 语言切了。全程没有 switchToNextInputMethod 调用 ⇒ 是搜狗自己翻的 subtype
+     *     （走的不是公开 API，很可能是 InputMethodManager.setInputMethodAndSubtype）。
+     * 吞键版：同一次按键只留下 "strict: blocked native switch key KEYCODE_SPACE"，
+     *   没有任何 marker / 语言命令 ⇒ 语言不动。
+     * </pre>
+     * 两个版本对照 ⇒ 这行守卫是**有效的**（不是兜底）：搜狗那条自切路径只有在这里拦得住。
+     * 反过来说，如果哪天它变成空转（比如上游先吃掉了按下键），就能删——判断方法就是这个对照。
      *
      * <p>不影响 BZK：BZK 是 system_server 里的 input filter，先于 IME 拿到事件，
-     * 它照旧按框架 subtype 切换；我们只是让搜狗**看不到**这两个组合键。
+     * 它照旧按框架 subtype 切换；我们只是让搜狗**看不到**这个组合键。
      */
     private static void installKeyGuards() {
         final Object svc = sService;
@@ -926,9 +938,14 @@ public final class SogouTranslator {
                         final int kc = (Integer) kcArg;
                         final int meta = ((KeyEvent) evArg).getMetaState();
                         final boolean ctrl = (meta & KeyEvent.META_CTRL_ON) != 0;
-                        if (ctrl && (kc == KeyEvent.KEYCODE_SPACE
-                                || kc == KeyEvent.KEYCODE_SHIFT_LEFT
-                                || kc == KeyEvent.KEYCODE_SHIFT_RIGHT)) {
+                        // ⚠ 只吞 Ctrl+Space。**不要吞 Ctrl+Shift**（2026-09-20 真机定案）：
+                        // 按住 Ctrl 时吞掉 Shift 的按键，会让搜狗组不出任何 Ctrl+Shift+<键>
+                        // 的组合 ⇒ 用户自设的硬键盘热键（如 Ctrl+Shift+P 软硬切换）时灵时不灵，
+                        // 且表现为"先按 Shift 再按 Ctrl 就行、反过来不行"。
+                        // Ctrl+Shift 那条原生切语言由**命令级守卫**挡（log: blocked sogou chord switch）。
+                        // Ctrl+Space 则**必须**在这里吞：对照实验见 installKeyGuards() 的注释
+                        // ——放行时搜狗会自己翻 framework subtype（语言真的会切）。
+                        if (ctrl && kc == KeyEvent.KEYCODE_SPACE) {
                             Log.i(TAG, "strict: blocked native switch key "
                                     + KeyEvent.keyCodeToString(kc));
                             return true;             // 吞掉，不给搜狗处理
