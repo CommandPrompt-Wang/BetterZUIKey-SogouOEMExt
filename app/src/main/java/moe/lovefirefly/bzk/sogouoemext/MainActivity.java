@@ -205,16 +205,16 @@ public class MainActivity extends AppCompatActivity {
                 "开启后由模块接管 Ctrl/Shift 分词/选区。\n"
                 + "部分输入框机制导致默认行为无法有效选区和分词。");
 
-        // 纯开关（无快捷键）：解除硬键盘设置里 Alt/Shift+字母 不让设的限制
+        // 纯开关（无快捷键）：解除搜狗「外接键盘设置」里 Alt/Shift+字母 不让设的限制
         unlockHotkeySwitch = addSwitch(strictBox, "解除快捷键设置限制",
                 "解除无法设置Alt或Shift+字母快捷键的问题\n"
                 + "注意：注意快捷键冲突与上层抢占问题；Shift+字母为大写快捷键，谨慎设置。");
 
-        // 锁定软硬键盘模式：功能开关 + 状态行（硬键盘/软键盘）+ 整卡长按应急切换
+        // 锁定软物理键盘模式：功能开关 + 状态行（物理键盘/软键盘）+ 整卡长按应急切换
         hardKbdSwitch = addStatusSwitch(strictBox, "更好的软硬键盘切换",
                 "软硬键盘切换功能在本平台几乎没有意义，硬键盘下仍然会因为点击而弹出软键盘，"
-                + "反而导致快捷键完全失效。\n长按整行亦可切换硬键盘/软键盘状态",
-                LangConfig.KEY_HARD_KBD_LOCK, true, "hardKbd", false, "硬键盘", "软键盘",
+                + "反而导致快捷键完全失效。\n长按整行亦可切换物理键盘/软键盘状态",
+                LangConfig.KEY_HARD_KBD_LOCK, false, "hardKbd", false, "物理键盘", "软键盘",
                 LangConfig.KEY_WANT_HARD, this::showHardKbdRules);
 
         // 匹配列表编辑入口：两个开关共用，独立成条目
@@ -234,6 +234,40 @@ public class MainActivity extends AppCompatActivity {
         fab.setText("原理 / 说明");
         fab.setOnClickListener(v -> startActivity(
                 new android.content.Intent(this, InfoActivity.class)));
+
+        // 「刷新状态」：**悬浮在 scroll 区域右下角**的原生 Material FAB
+        // （图标用系统自带的同步图标，不自绘）
+        final com.google.android.material.floatingactionbutton.FloatingActionButton refreshFab =
+                new com.google.android.material.floatingactionbutton.FloatingActionButton(this);
+        // 只转图标：把图标包进 RotateDrawable，动它的 level（0..10000 映射 0..360°），
+        // 这样 FAB 本体（背景/阴影）保持不动。
+        final android.graphics.drawable.RotateDrawable spinIcon =
+                new android.graphics.drawable.RotateDrawable();
+        spinIcon.setDrawable(getResources().getDrawable(android.R.drawable.ic_popup_sync));
+        spinIcon.setLevel(0);
+        refreshFab.setImageDrawable(spinIcon);
+        refreshFab.setContentDescription("刷新状态");
+        refreshFab.setTooltipText("刷新状态");
+        // 持久阴影：FAB 本来有默认 elevation，但父层若裁剪就看不出 ⇒ 显式给一层 + 关掉裁剪
+        refreshFab.setCompatElevation(6f * getResources().getDisplayMetrics().density);
+        // 点一下转一圈（动画期间忽略连点），同时异步拉全部状态位
+        final boolean[] spinning = {false};
+        refreshFab.setOnClickListener(v -> {
+            if (spinning[0]) return;
+            spinning[0] = true;
+            final android.animation.ObjectAnimator anim =
+                    android.animation.ObjectAnimator.ofInt(spinIcon, "level", 0, 10000);
+            anim.setDuration(600);
+            anim.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override public void onAnimationEnd(android.animation.Animator a) {
+                    spinning[0] = false;
+                    spinIcon.setLevel(0);
+                }
+            });
+            anim.start();
+            fetchStateAsync(false);
+        });
+
         final LinearLayout.LayoutParams flp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         flp.gravity = Gravity.CENTER_HORIZONTAL;
@@ -252,9 +286,21 @@ public class MainActivity extends AppCompatActivity {
         scroll.setFillViewport(true);
         scroll.addView(content);
 
-        root.addView(scroll, new LinearLayout.LayoutParams(
+        // 滚动区 + 悬浮刷新按钮（同一层 FrameLayout ⇒ 按钮浮在列表上方，不占布局高度）
+        final android.widget.FrameLayout scrollWrap = new android.widget.FrameLayout(this);
+        scrollWrap.setClipChildren(false);      // 别裁掉 FAB 的阴影
+        scrollWrap.addView(scroll, new android.widget.FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        final android.widget.FrameLayout.LayoutParams refreshLp =
+                new android.widget.FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        refreshLp.gravity = Gravity.BOTTOM | Gravity.END;
+        refreshLp.setMargins(0, 0, pad * 2, pad * 2);
+        scrollWrap.addView(refreshFab, refreshLp);
+
+        root.addView(scrollWrap, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        root.addView(fab, flp);          // FAB 固定在视口底部
+        root.addView(fab, flp);          // 底部仍是"原理 / 说明"
         setContentView(root);
         applyInsets(root);
 
@@ -308,9 +354,13 @@ public class MainActivity extends AppCompatActivity {
         fetchStateAsync();
     }
 
-    /** 正在等待模块回镜像 / 已超时（状态行显示占位符）。 */
-    private volatile boolean stateFetching;
-    private volatile boolean stateTimedOut;
+    /** 状态行的等待/超时标志（与弹窗各自独立，互不干扰）。 */
+    private volatile boolean rowFetching;
+    private volatile boolean rowTimedOut;
+
+    /** 弹窗的等待/超时标志。 */
+    private volatile boolean dlgFetching;
+    private volatile boolean dlgTimedOut;
 
     /**
      * 进前台时**异步拉取一次**真实状态。
@@ -320,10 +370,24 @@ public class MainActivity extends AppCompatActivity {
      * 期间状态行显示「获取中……」，5 秒还没等到就显示「获取超时」。
      */
     private void fetchStateAsync() {
+        fetchStateAsync(false);
+    }
+
+    /**
+     * 异步拉一次真实状态。
+     *
+     * @param forDialog true = 只为弹窗文案拉值（**不动状态行**的状态）；false = 刷新状态行
+     */
+    private void fetchStateAsync(final boolean forDialog) {
         final long askedAt = System.currentTimeMillis();
-        stateFetching = true;
-        stateTimedOut = false;
-        for (Runnable r : statusRefreshers) r.run();
+        if (forDialog) {
+            dlgFetching = true;
+            dlgTimedOut = false;
+        } else {
+            rowFetching = true;
+            rowTimedOut = false;
+            for (Runnable r : statusRefreshers) r.run();
+        }
         sendConfigPoke();
         final android.os.Handler h = new android.os.Handler(getMainLooper());
         h.postDelayed(new Runnable() {
@@ -332,20 +396,29 @@ public class MainActivity extends AppCompatActivity {
                 final long at = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                         .getLong("hardKbdAtMs", 0L);
                 if (at >= askedAt) {                    // 模块回了更新的镜像
-                    stateFetching = false;
-                    stateTimedOut = false;
-                    for (Runnable r : statusRefreshers) r.run();
+                    finishFetch(forDialog, false);
                     return;
                 }
                 if (System.currentTimeMillis() - askedAt > 5000) {
-                    stateFetching = false;
-                    stateTimedOut = true;
-                    for (Runnable r : statusRefreshers) r.run();
+                    finishFetch(forDialog, true);
                     return;
                 }
                 h.postDelayed(this, 250);
             }
         }, 250);
+    }
+
+    /** 结束一次拉取：按目标（状态行 / 弹窗）复位标志并刷新它。 */
+    private void finishFetch(boolean forDialog, boolean timedOut) {
+        if (forDialog) {
+            dlgFetching = false;
+            dlgTimedOut = timedOut;
+            refreshRulesDialog();
+        } else {
+            rowFetching = false;
+            rowTimedOut = timedOut;
+            for (Runnable r : statusRefreshers) r.run();
+        }
     }
 
     /**
@@ -355,31 +428,69 @@ public class MainActivity extends AppCompatActivity {
      * App 读不到 ⇒ 由模块在热键切换时通过 [ConfigProvider] 镜像过来；读不到就显示默认值。
      * 功能开关关掉时显示「功能已关闭」（不看状态位）。
      */
-    /** 「查看切换规则」弹窗（文案由用户定稿；{@code {快捷键}} 显示搜狗里的真实绑定）。 */
-    private void showHardKbdRules() {
-        final String hk = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
+    /** 打开中的「切换规则」弹窗（异步拉到新镜像后就地刷新自带 TextView）。 */
+    private android.app.AlertDialog hardKbdRulesDialog;
+    private android.widget.TextView hardKbdRulesView;
+
+    /** 「切换规则」文案；{@code 快捷键} 那一行跟随异步拉取状态显示占位符。 */
+    private String hardKbdRulesText() {
+        final String raw = getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                 .getString("hardKbdHotkey", "");
-        final String hotkey = (hk == null || hk.isEmpty())
-                ? "未设置该快捷键" : hk;
-        new android.app.AlertDialog.Builder(this)
+        final String hotkey;
+        if (dlgFetching) {
+            hotkey = "获取中……";
+        } else if (dlgTimedOut) {
+            hotkey = "获取超时";
+        } else {
+            hotkey = (raw == null || raw.isEmpty()) ? "未设置该快捷键" : raw;
+        }
+        return "模块接管切换：开关打开时将拦截搜狗原生的自动切换行为，"
+                + "而下面这些显式动作永远有效。\n\n"
+                + "切到软键盘的方法：\n"
+                + "   快捷键：" + hotkey + "\n"
+                + "   2 秒内，进入->退出->进入同一文本框\n"
+                + "   在物理键盘模式下长按条目\n"
+                + "   点击工具栏最右侧的软键盘按钮\n\n"
+                + "切到物理键盘的方法\n"
+                + "   快捷键：" + hotkey + "\n"
+                + "   用物理键盘打字\n"
+                + "   在软键盘模式下长按条目\n\n"
+                + "其他\n"
+                + "   物理键盘态下点一次输入框不再会弹出软键盘，除非满足上述条件\n"
+                + "   软键盘态下把软键盘收掉后，再次点进输入框会正常弹出";
+    }
+
+    /** 弹窗开着就刷新它（异步拉到新值 / 超时）。 */
+    private void refreshRulesDialog() {
+        final android.widget.TextView tv = hardKbdRulesView;
+        if (tv != null) tv.setText(hardKbdRulesText());
+    }
+
+    /** 「查看切换规则」弹窗（打开时**也异步拉一次**，值不会过期）。 */
+    private void showHardKbdRules() {
+        // 先置"获取中"（这样弹窗首帧就是占位符），再 show，最后异步拉
+        dlgFetching = true;
+        dlgTimedOut = false;
+        final int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        final android.widget.TextView tv = new android.widget.TextView(this);
+        tv.setText(hardKbdRulesText());
+        tv.setPadding(pad, pad / 2, pad, pad / 2);
+        final android.widget.ScrollView sc = new android.widget.ScrollView(this);
+        sc.addView(tv);
+        hardKbdRulesView = tv;
+        hardKbdRulesDialog = new android.app.AlertDialog.Builder(this)
                 .setTitle("切换规则")
-                .setMessage(
-                        "模块接管切换：开关打开时将拦截搜狗原生的自动切换行为，"
-                        + "而下面这些显式动作永远有效。\n\n"
-                        + "切到软键盘的方法：\n"
-                        + "   快捷键：" + hotkey + "\n"
-                        + "   2 秒内，进入->退出->进入同一文本框\n"
-                        + "   在硬键盘模式下长按条目\n"
-                        + "   点击工具栏最右侧的软键盘按钮\n\n"
-                        + "切到物理键盘的方法\n"
-                        + "   快捷键：" + hotkey + "\n"
-                        + "   用物理键盘打字\n"
-                        + "   在软键盘模式下长按条目\n\n"
-                        + "其他\n"
-                        + "   硬键盘态下点一次输入框不再会弹出软键盘，除非满足上述条件\n"
-                        + "   软键盘态下把软键盘收掉后，再次点进输入框会正常弹出")
-                .setPositiveButton("知道了", null)
+                .setView(sc)
+                .setPositiveButton("知道了", (d, w) -> {
+                    hardKbdRulesDialog = null;
+                    hardKbdRulesView = null;
+                })
+                .setOnCancelListener(d -> {
+                    hardKbdRulesDialog = null;
+                    hardKbdRulesView = null;
+                })
                 .show();
+        fetchStateAsync(true);      // true = 只为弹窗拉值：**不动下面的状态行**
     }
 
     private MaterialSwitch addStatusSwitch(LinearLayout parent, String title, String hintPrefix,
@@ -432,11 +543,11 @@ public class MainActivity extends AppCompatActivity {
                     ? cfgPrefs.getBoolean(wantKey, statusDefault)
                     : getSharedPreferences(STATE_MIRROR, MODE_PRIVATE)
                             .getBoolean(statusKey, statusDefault);
-            if (stateFetching) {
+            if (rowFetching) {
                 statusTv.setText("当前状态：获取中……");
                 return;
             }
-            if (stateTimedOut) {
+            if (rowTimedOut) {
                 statusTv.setText("当前状态：获取超时");
                 return;
             }

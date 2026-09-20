@@ -7,9 +7,9 @@ import java.lang.reflect.Method;
 import io.github.libxposed.api.XposedModule;
 
 /**
- * 「解除快捷键设置限制」：让搜狗硬键盘设置里能设 Alt/Shift+字母 的快捷键。
+ * 「解除快捷键设置限制」：让搜狗「外接键盘设置」里能设 Alt/Shift+字母 的快捷键。
  *
- * <p><b>病灶</b>（真机 2026-09-20 定位）：搜狗「硬件键盘设置」录快捷键时，输入框的
+ * <p><b>病灶</b>（真机 2026-09-20 定位）：搜狗「外接键盘设置」录快捷键时，输入框的
  * {@code TextWatcher#afterTextChanged} 会调一个「这个组合能不能用」的校验方法；不通过就查表
  * 弹 Toast（资源里就是那四条：不支持设置 Alt/Shift + 字母/符号组合键）。所以 **Alt/Shift 系
  * 整类被设置页挡掉**，而底层组合键模型其实是认 Shift/Alt 的。
